@@ -1,0 +1,239 @@
+use super::*;
+impl App {
+    pub(super) fn thumb(
+        &mut self,
+        ui: &mut egui::Ui,
+        provider: Provider,
+        url: &str,
+        size: f32,
+        selected: bool,
+    ) -> egui::Response {
+        let response = ui.add(
+            egui::Button::new("")
+                .min_size(Vec2::splat(size))
+                .selected(selected),
+        );
+        if let Some(v) = self.visuals.get(url) {
+            let frame = if response.hovered() && v.frames.len() > 1 {
+                ui.ctx().request_repaint_after(Duration::from_millis(35));
+                let total: u64 = v.delays.iter().sum();
+                let mut t = (ui.input(|i| i.time) * 1000.) as u64 % total.max(1);
+                let mut n = 0;
+                for (i, d) in v.delays.iter().enumerate() {
+                    if t < *d {
+                        n = i;
+                        break;
+                    }
+                    t -= *d;
+                }
+                n
+            } else {
+                0
+            };
+            let texture = &v.frames[frame];
+            let rect = response.rect.shrink(7.);
+            let source = texture.size_vec2();
+            let scale = (rect.width() / source.x).min(rect.height() / source.y);
+            let rect = egui::Rect::from_center_size(rect.center(), source * scale);
+            ui.painter().image(
+                texture.id(),
+                rect,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.)),
+                Color32::WHITE,
+            );
+        } else if let Some(error) = self.failed.get(url) {
+            ui.painter().text(
+                response.rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Retry",
+                egui::FontId::proportional(12.),
+                ui.visuals().error_fg_color,
+            );
+            response.clone().on_hover_text(error);
+            if response.clicked() {
+                self.failed.remove(url);
+            }
+        } else {
+            ui.painter().circle_stroke(
+                response.rect.center(),
+                7.,
+                egui::Stroke::new(1.5_f32, ui.visuals().weak_text_color()),
+            );
+            if !url.is_empty() && self.inflight.insert(url.into()) {
+                self.services.media(provider, url.into());
+            }
+        }
+        response
+    }
+    pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: Vec<LibrarySticker>, picker: bool) {
+        if items.is_empty() {
+            ui.add_space(32.);
+            ui.heading("Your next reaction starts here");
+            ui.label("Browse sticker packs, then add your favorites.");
+            if ui.button("Browse repositories").clicked() {
+                self.tab = Tab::Browse;
+                self.open_library();
+                self.browse();
+            }
+            return;
+        }
+        let columns = ((ui.available_width() + 8.) / 88.).floor().max(1.) as usize;
+        self.selected = self.selected.min(items.len() - 1);
+        if picker && self.pending.is_none() {
+            self.selected = navigate(ui, self.selected, items.len(), columns);
+            if ui.input(|i| i.key_pressed(egui::Key::Enter))
+                && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))))
+            {
+                self.choose(items[self.selected].clone(), false, true);
+            }
+        }
+        let editing_text = ui.ctx().wants_keyboard_input();
+        let navigation = picker
+            && !editing_text
+            && ui.input(|i| {
+                [
+                    egui::Key::ArrowDown,
+                    egui::Key::ArrowUp,
+                    egui::Key::ArrowLeft,
+                    egui::Key::ArrowRight,
+                ]
+                .iter()
+                .any(|k| i.key_pressed(*k))
+            });
+        let mut scroll = egui::ScrollArea::vertical().id_salt(if picker {
+            "picker-grid"
+        } else {
+            "library-grid"
+        });
+        if navigation {
+            scroll = scroll.vertical_scroll_offset((self.selected / columns) as f32 * 88.);
+        }
+        scroll.show_rows(ui, 88., items.len().div_ceil(columns), |ui, rows| {
+            for row in rows {
+                ui.horizontal(|ui| {
+                    for column in 0..columns {
+                        let n = row * columns + column;
+                        let Some(item) = items.get(n) else { break };
+                        ui.push_id(format!("{}:{}", item.pack_key, item.sticker.id), |ui| {
+                            let r = self.thumb(
+                                ui,
+                                item.provider,
+                                &item.sticker.url,
+                                80.,
+                                picker && n == self.selected,
+                            );
+                            r.clone().on_hover_text(format!(
+                                "{}\n{} · {}\nRight-click for more",
+                                item.sticker.label, item.pack_title, item.provider
+                            ));
+                            if r.clicked() {
+                                self.selected = n;
+                                self.choose(item.clone(), false, picker);
+                            }
+                            r.context_menu(|ui| {
+                                if ui.button("Copy image").clicked() {
+                                    self.choose(item.clone(), false, false);
+                                    ui.close();
+                                }
+                                if ui.button("Paste original file").clicked() {
+                                    self.choose(item.clone(), true, picker);
+                                    ui.close();
+                                }
+                                ui.separator();
+                                ui.label("Add to group");
+                                for group in self.groups.clone() {
+                                    if ui.button(&group.name).clicked() {
+                                        let result = self.store.add_to_group(
+                                            group.id,
+                                            &item.pack_key,
+                                            &item.sticker.id,
+                                        );
+                                        self.report(result, "Added to group");
+                                        ui.close();
+                                    }
+                                }
+                                if let Filter::Group(id) = self.filter {
+                                    if ui.button("Move earlier").clicked() {
+                                        let r = self.store.move_in_group(
+                                            id,
+                                            &item.pack_key,
+                                            &item.sticker.id,
+                                            -1,
+                                        );
+                                        self.report(r, "Order updated");
+                                        ui.close();
+                                    }
+                                    if ui.button("Move later").clicked() {
+                                        let r = self.store.move_in_group(
+                                            id,
+                                            &item.pack_key,
+                                            &item.sticker.id,
+                                            1,
+                                        );
+                                        self.report(r, "Order updated");
+                                        ui.close();
+                                    }
+                                    if ui.button("Remove from group").clicked() {
+                                        let r = self.store.remove_from_group(
+                                            id,
+                                            &item.pack_key,
+                                            &item.sticker.id,
+                                        );
+                                        self.report(r, "Removed from group");
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        });
+                    }
+                });
+            }
+        });
+    }
+}
+
+fn navigate(ui: &egui::Ui, mut selected: usize, length: usize, columns: usize) -> usize {
+    let editing_text = ui.ctx().wants_keyboard_input();
+    ui.input(|i| {
+        if !editing_text && i.key_pressed(egui::Key::ArrowRight) {
+            selected = (selected + 1).min(length - 1);
+        }
+        if !editing_text && i.key_pressed(egui::Key::ArrowLeft) {
+            selected = selected.saturating_sub(1);
+        }
+        if i.key_pressed(egui::Key::ArrowDown) {
+            selected = (selected + columns).min(length - 1);
+        }
+        if i.key_pressed(egui::Key::ArrowUp) {
+            selected = selected.saturating_sub(columns);
+        }
+    });
+
+    selected
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn keyboard_navigation_reads_context_without_nested_locks() {
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::ArrowRight,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let mut selected = 0;
+        let _ = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                selected = navigate(ui, selected, 10, 5);
+            });
+        });
+        assert_eq!(selected, 1);
+    }
+}

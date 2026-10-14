@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Picora
+Comment=Paste stickers from DCInside and Arca
+Exec=picora --library
+Icon=app.picora.desktop
+Terminal=false
+Categories=Utility;
+StartupWMClass=app.picora.desktop
