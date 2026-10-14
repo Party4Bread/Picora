@@ -5,6 +5,7 @@
 [Setup]
 AppId={{781147A4-7EF7-4AAC-A65D-8161D7FD45B0}
 AppName=Picora
+AppMutex=Local\Picora.Desktop
 AppVersion={#AppVersion}
 AppPublisher=Party4Bread
 AppPublisherURL=https://github.com/Party4Bread/Picora

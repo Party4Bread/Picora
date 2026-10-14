@@ -12,7 +12,8 @@ In GitHub **Actions → Rust desktop**, select a successful run and download the
 The installer installs for the current user without administrator rights, adds
 Start menu shortcuts, and offers an optional desktop shortcut. Use Windows
 Installed apps to uninstall; downloaded packs, settings, and encrypted sessions
-are preserved. Launch at login remains an opt-in setting inside Picora.
+are preserved. Quit Picora from its tray menu before upgrading or uninstalling.
+Launch at login remains an opt-in setting inside Picora.
 
 To build locally, install Inno Setup 6 and Python 3.11 or newer, then run:
 
