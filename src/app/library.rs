@@ -76,8 +76,16 @@ impl App {
                         )
                         .clicked()
                     {
-                        self.installing = true;
-                        self.services.install(pack.clone());
+                        // Persist the user's choice before starting network work.
+                        // A restart or partial download must not lose the favorite.
+                        match self.store.save_favorite_pack(&pack) {
+                            Ok(()) => {
+                                self.refresh();
+                                self.installing = true;
+                                self.services.install(pack.clone());
+                            }
+                            Err(e) => self.message(format!("Cannot save favorite: {e:#}"), true),
+                        }
                     }
                     ui.separator();
                     let items = pack

@@ -60,7 +60,11 @@ handling. Keep `vendor/eframe` with the source checkout; see
 2. For Arca, use **Accounts → Sign in / reconnect**. Sign in on the actual website, then close that window to return its cookies to Picora. Windows saves cookies in `arca-session.dpapi`, encrypted for your Windows account; other platforms use the OS credential store. If saving fails, the session remains in memory and the error is shown. Arca's live authenticated integration still needs verification; see the compatibility record.
 3. Press **Ctrl+Shift+Space** to open the picker. Search pack/sticker titles, use arrows and Enter, or click a sticker. Picora copies the image, hides, and attempts the paste shortcut. It never presses Enter to send a message.
 4. Create custom groups in **Groups**. Right-click a downloaded sticker to add it, change its order, or remove it from a group.
-5. Hover over a sticker to preview animation. **Paste original file** offers the original GIF/WebP to apps that support file pastes. Normal selection copies a still image with transparency. Receiving apps decide which formats they accept.
+5. Hover over a sticker to preview animation. Normal selection pastes GIF and animated WebP as files; APNG gets an animated GIF copy for chat-attachment compatibility. **Paste original file** always preserves the source bytes, including APNG. **Copy still image** explicitly copies a PNG frame. GIF conversion may reduce colors and partial transparency; use the original when the destination supports APNG.
+
+Favorites are saved as soon as you add a pack, before media downloads finish.
+If you quit during a download, the favorite remains after restarting; uncached
+stickers download when used, or you can reopen the pack and retry the full download.
 
 The library window copies without auto-pasting because it is a management surface, not a transient picker. When automatic paste is unavailable, press Ctrl+V / Cmd+V in your chat app. Picora retains clipboard contents and original files after selection.
 

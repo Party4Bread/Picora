@@ -31,6 +31,7 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 interprocess = "2"
 fs2 = "0.4"
 open = "5"
+tempfile = "3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 winit = { version = "0.30", default-features = false, features = ["x11"] }
@@ -40,14 +41,13 @@ x11rb = { version = "0.13", features = ["xtest"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading"] }
-tempfile = "3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSRunningApplication", "NSWorkspace"] }
 
 [dev-dependencies]
-tempfile = "3"
+png = "0.18"
 
 [target.'cfg(target_os = "windows")'.dev-dependencies]
 winit = { version = "0.30", default-features = false }

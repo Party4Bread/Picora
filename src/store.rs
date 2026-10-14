@@ -25,10 +25,16 @@ impl Store {
         Ok(Self { conn })
     }
     pub fn save_pack(&self, pack: &Pack) -> Result<()> {
+        self.save_pack_with_favorite(pack, false)
+    }
+    pub fn save_favorite_pack(&self, pack: &Pack) -> Result<()> {
+        self.save_pack_with_favorite(pack, true)
+    }
+    fn save_pack_with_favorite(&self, pack: &Pack, favorite: bool) -> Result<()> {
         ensure!(!pack.stickers.is_empty(), "Pack has no stickers");
         let tx = self.conn.unchecked_transaction()?;
         let key = pack.reference.key();
-        tx.execute("INSERT INTO packs(key,data) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET data=excluded.data", params![key, serde_json::to_string(pack)?])?;
+        tx.execute("INSERT INTO packs(key,data,favorite) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET data=excluded.data,favorite=CASE WHEN ?3 THEN 1 ELSE packs.favorite END", params![key, serde_json::to_string(pack)?, favorite])?;
         for s in &pack.stickers {
             tx.execute(
                 "INSERT OR IGNORE INTO stickers(pack,id) VALUES(?1,?2)",

@@ -141,11 +141,14 @@ impl Services {
             s.bus.send(Event::Installed(result));
         });
     }
-    pub fn copy(&self, item: LibrarySticker, original: bool) {
+    pub fn copy(&self, item: LibrarySticker, mode: crate::media::CopyMode) {
         let s = self.clone();
         self.runtime.spawn(async move {
             let result = async {
                 let asset = s.asset(item.provider, &item.sticker.url).await?;
+                let cache = s.cache.clone();
+                let (asset, original) =
+                    tokio::task::spawn_blocking(move || cache.prepare_copy(asset, mode)).await??;
                 #[cfg(target_os = "linux")]
                 {
                     let wayland = s.wayland.lock().unwrap().clone();

@@ -2,6 +2,7 @@ mod events;
 mod grid;
 mod library;
 use crate::{
+    media::CopyMode,
     model::*,
     platform::{
         self,
@@ -332,7 +333,7 @@ impl App {
             })
             .collect()
     }
-    fn choose(&mut self, item: LibrarySticker, original: bool, from_picker: bool) {
+    fn choose(&mut self, item: LibrarySticker, mode: CopyMode, from_picker: bool) {
         if self.pending.is_some() || self.paste_at.is_some() {
             return;
         }
@@ -345,7 +346,7 @@ impl App {
             from_picker,
         });
         self.message("Preparing clipboard…", false);
-        self.services.copy(item, original);
+        self.services.copy(item, mode);
     }
     fn report(&mut self, result: Result<()>, success: &str) {
         match result {
