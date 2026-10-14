@@ -4,6 +4,14 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
     throw 'Installer smoke testing requires a disposable GitHub Actions runner.'
 }
 $root = Split-Path $PSScriptRoot -Parent
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$visualStudio = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if ($LASTEXITCODE -ne 0 -or -not $visualStudio) { throw 'Cannot locate Visual C++ tools for import check' }
+$dumpbin = Get-ChildItem "$visualStudio\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+if (-not $dumpbin) { throw 'Cannot locate dumpbin' }
+$imports = & $dumpbin.FullName /dependents "$root\target\release\picora.exe"
+if ($LASTEXITCODE -ne 0) { throw 'Import inspection failed' }
+if ($imports -match '(?i)(VCRUNTIME|MSVCP)\d.*\.dll') { throw 'Installer executable depends on VC++ Redistributable' }
 $installers = @(Get-ChildItem "$root\dist\*-windows-x64-setup.exe")
 if ($installers.Count -ne 1) { throw 'Expected exactly one Windows installer' }
 $destination = Join-Path $env:RUNNER_TEMP 'Picora installer smoke'
