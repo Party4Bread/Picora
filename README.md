@@ -18,10 +18,23 @@ sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev l
 
 Windows needs the WebView2 runtime for Arca login. macOS uses the system WebKit. Linux runtime needs WebKitGTK 4.1, GTK 3, AppIndicator, and X11 or XWayland. On Wayland desktops, Picora deliberately creates XWayland windows because the current winit Wayland backend cannot hide/show transient windows. Keyboard and shortcut integration still uses Wayland desktop portals.
 
+For Windows source builds, install Visual Studio C++ Build Tools and a current
+Rust MSVC toolchain (`rustup update stable`). Rust 1.90 MSVC is verified; an old
+toolchain named `stable` may still need updating. Use PowerShell to isolate data:
+
+```powershell
+$env:PICORA_DATA_DIR = "$PWD\test-data"
+cargo +stable run --locked -- --library
+```
+
+Picora includes a local eframe 0.33.3 backport for Windows hidden-window
+handling. Keep `vendor/eframe` with the source checkout; see
+[patch provenance](vendor/eframe/PICORA-PATCH.md).
+
 ## Use
 
 1. Open **Discover**. Search DCInside, select a pack, and choose **Add pack to favorites**. You can also paste `https://dccon.dcinside.com/#41982` or an Arca `/e/<id>` URL into the search field.
-2. For Arca, use **Accounts → Sign in / reconnect**. Sign in on the actual website, then close that window to return its cookies to Picora. Credentials go to the OS credential store, or remain in memory if unavailable. Arca's live authenticated integration still needs verification; see the compatibility record.
+2. For Arca, use **Accounts → Sign in / reconnect**. Sign in on the actual website, then close that window to return its cookies to Picora. Windows saves cookies in `arca-session.dpapi`, encrypted for your Windows account; other platforms use the OS credential store. If saving fails, the session remains in memory and the error is shown. Arca's live authenticated integration still needs verification; see the compatibility record.
 3. Press **Ctrl+Shift+Space** to open the picker. Search pack/sticker titles, use arrows and Enter, or click a sticker. Picora copies the image, hides, and attempts the paste shortcut. It never presses Enter to send a message.
 4. Create custom groups in **Groups**. Right-click a downloaded sticker to add it, change its order, or remove it from a group.
 5. Hover over a sticker to preview animation. **Paste original file** offers the original GIF/WebP to apps that support file pastes. Normal selection copies a still image with transparency. Receiving apps decide which formats they accept.
@@ -35,7 +48,7 @@ The library window copies without auto-pasting because it is a management surfac
 - **Linux X11:** global shortcut, focus restoration and X11 clipboard ownership.
 - **Wayland:** approve the desktop shortcut dialog; enable keyboard access in **Settings** for automatic paste. Remote Desktop permission requests keyboard access only. Clipboard portal support varies by desktop. If the shortcut portal is unavailable, bind `picora --show` in desktop settings. Unsupported or declined permissions produce a manual-paste fallback; sessions without XWayland cannot start the picker.
 
-Tray menu: open picker, open library, quit. Closing a window keeps the background process alive. Settings includes a Quit button for desktops without tray support.
+Picora starts quietly in the system tray by default, with no open window. On Windows, look in the taskbar's hidden-icons arrow if the icon is not visible. Right-click the Picora icon to open the picker or library, hide both windows with **Hide to tray**, or quit. Closing a window keeps Picora running in the tray; **Ctrl+Shift+Space** reopens the picker. If tray creation reports an error, the library opens with that error instead. Settings also includes a Quit button.
 
 ```sh
 picora --show
@@ -54,6 +67,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo build --locked
 # Explicit network smoke test, excluded from the normal suite:
 cargo test --test live -- --ignored
+# Windows interactive desktop: hidden picker/library/reopen regression
+cargo test --locked --test windows_viewports -- --ignored --nocapture
 ```
 
 Tests include real DCInside response fixtures and **synthetic** Arca fixtures; synthetic fixtures are not evidence of authenticated Arca compatibility. No credentials are required by CI. See [compatibility and validation](docs/COMPATIBILITY.md) for what has actually been tested.

@@ -202,13 +202,11 @@ impl Services {
                 repo.set_cookies(&cookies);
                 // Keep the usable session even if a catalog parser needs updating.
                 s.repos.lock().unwrap()[1] = repo.clone();
-                let persisted = tokio::task::spawn_blocking(move || crate::auth::save(&cookies))
-                    .await?
-                    .is_ok();
-                let storage = if persisted {
-                    "Session saved in your OS credential store."
-                } else {
-                    "Session is memory-only: OS credential storage is unavailable."
+                let persisted =
+                    tokio::task::spawn_blocking(move || crate::auth::save(&cookies)).await?;
+                let storage = match persisted {
+                    Ok(()) => "Session saved securely for your OS account.".to_owned(),
+                    Err(e) => format!("Session is memory-only: could not save securely ({e:#})."),
                 };
                 match repo.browse("", 1).await {
                     Ok(_) => Ok(format!("Arca connected. {storage}")),

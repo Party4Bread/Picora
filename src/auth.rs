@@ -1,21 +1,36 @@
-//! Session credentials cross only an inherited pipe and the OS credential store.
+//! Sessions use an inherited pipe and OS-protected storage, never plaintext files.
 use anyhow::{Context, Result, ensure};
 use std::io::{Read, Write};
 const SERVICE: &str = "app.picora.desktop";
 const ACCOUNT: &str = "arca-session";
+#[cfg(target_os = "windows")]
+mod windows;
 pub fn load() -> Result<Vec<String>> {
+    #[cfg(target_os = "windows")]
+    if let Some(cookies) = windows::load(&windows::path()?)? {
+        return Ok(cookies);
+    }
+    // Older Windows builds stored small sessions in Credential Manager.
     let value = keyring::Entry::new(SERVICE, ACCOUNT)?.get_password()?;
     Ok(serde_json::from_str(&value)?)
 }
 pub fn save(cookies: &[String]) -> Result<()> {
-    keyring::Entry::new(SERVICE, ACCOUNT)?.set_password(&serde_json::to_string(cookies)?)?;
-    Ok(())
+    #[cfg(target_os = "windows")]
+    return windows::save(&windows::path()?, cookies);
+    #[cfg(not(target_os = "windows"))]
+    {
+        keyring::Entry::new(SERVICE, ACCOUNT)?.set_password(&serde_json::to_string(cookies)?)?;
+        Ok(())
+    }
 }
 pub fn forget() -> Result<()> {
-    match keyring::Entry::new(SERVICE, ACCOUNT)?.delete_credential() {
+    let legacy = match keyring::Entry::new(SERVICE, ACCOUNT)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.into()),
-    }
+    };
+    #[cfg(target_os = "windows")]
+    windows::forget(&windows::path()?)?;
+    legacy
 }
 pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
     use tokio::io::AsyncWriteExt;

@@ -307,7 +307,7 @@ impl App {
         ui.add_space(24.);
         ui.strong("Arca");
         ui.label("Sign in on Arca’s own website. When you are done, close the login window to connect the session.");
-        ui.label("Picora stores session cookies in your OS credential store when available. Your password stays on the website.");
+        ui.label("Picora saves session cookies using OS-protected storage (Windows account encryption on Windows). Your password stays on the website.");
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(!self.login_busy, egui::Button::new("Sign in / reconnect"))

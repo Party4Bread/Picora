@@ -21,6 +21,10 @@ impl App {
             match e.id.as_ref() {
                 "show" => self.show_picker(ctx),
                 "library" => self.open_library(),
+                "hide" => {
+                    self.hide_picker(ctx);
+                    self.library_open = false;
+                }
                 "quit" => self.quit = true,
                 _ => {}
             }

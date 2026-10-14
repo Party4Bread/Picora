@@ -39,7 +39,8 @@ gtk = "0.18"
 x11rb = { version = "0.13", features = ["xtest"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Security_Cryptography"] }
+tempfile = "3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -48,6 +49,14 @@ objc2-app-kit = { version = "0.3", features = ["NSRunningApplication", "NSWorksp
 [dev-dependencies]
 tempfile = "3"
 
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+winit = { version = "0.30", default-features = false }
+
 [profile.release]
 lto = "thin"
 strip = true
+
+# eframe 0.33 does not update hidden Windows windows. Keep the upstream
+# fix locally until the app migrates to the newer egui App/UI API.
+[patch.crates-io]
+eframe = { path = "vendor/eframe" }

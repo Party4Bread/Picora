@@ -187,10 +187,13 @@ impl App {
         app.register_shortcut();
         match make_tray() {
             Ok(tray) => app._tray = Some(tray),
-            Err(e) => app.message(
-                format!("Tray unavailable: {e}. Use picora --show to reopen."),
-                true,
-            ),
+            Err(e) => {
+                app.library_open = true;
+                app.message(
+                    format!("Tray unavailable: {e}. Use picora --show to reopen."),
+                    true,
+                );
+            }
         }
         Ok(app)
     }
@@ -481,6 +484,7 @@ fn make_tray() -> Result<tray_icon::TrayIcon> {
     menu.append_items(&[
         &MenuItem::with_id("show", "Open picker", true, None),
         &MenuItem::with_id("library", "Open library", true, None),
+        &MenuItem::with_id("hide", "Hide to tray", true, None),
         &MenuItem::with_id("quit", "Quit Picora", true, None),
     ])?;
     let mut rgba = vec![0u8; 32 * 32 * 4];

@@ -15,7 +15,12 @@ pub struct Instance {
     _lock: File,
 }
 impl Instance {
-    pub fn acquire(root: &Path, library: bool, tx: Sender<bool>) -> Result<Option<Self>> {
+    pub fn acquire(
+        root: &Path,
+        library: bool,
+        background: bool,
+        tx: Sender<bool>,
+    ) -> Result<Option<Self>> {
         std::fs::create_dir_all(root)?;
         #[cfg(unix)]
         {
@@ -39,6 +44,9 @@ impl Instance {
             socket.to_fs_name::<GenericFilePath>()?
         };
         if lock.try_lock_exclusive().is_err() {
+            if background {
+                return Ok(None);
+            }
             let mut last = None;
             for _ in 0..20 {
                 match Stream::connect(name.clone()) {
