@@ -36,7 +36,7 @@ cargo run --release -- --library
 Linux build dependencies (Debian/Ubuntu):
 
 ```sh
-sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libdbus-1-dev
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libxdo-dev libgl1-mesa-dev libdbus-1-dev
 ```
 
 Windows needs the WebView2 runtime for Arca login. macOS uses the system WebKit. Linux runtime needs WebKitGTK 4.1, GTK 3, AppIndicator, and X11 or XWayland. On Wayland desktops, Picora deliberately creates XWayland windows because the current winit Wayland backend cannot hide/show transient windows. Keyboard and shortcut integration still uses Wayland desktop portals.
