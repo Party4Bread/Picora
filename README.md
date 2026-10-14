@@ -4,6 +4,28 @@ A Rust desktop sticker picker for Windows, macOS, and Linux. Browse DCInside and
 
 ## Run
 
+### Windows installer
+
+In GitHub **Actions → Rust desktop**, select a successful run and download the
+`picora-Windows-X64` artifact. Extract it and run
+`picora-<version>-windows-x64-setup.exe`. The same artifact includes the portable ZIP.
+The installer installs for the current user without administrator rights, adds
+Start menu shortcuts, and offers an optional desktop shortcut. Use Windows
+Installed apps to uninstall; downloaded packs, settings, and encrypted sessions
+are preserved. Launch at login remains an opt-in setting inside Picora.
+
+To build locally, install Inno Setup 6 and Python 3.11 or newer, then run:
+
+```powershell
+cargo build --release --locked
+./scripts/build-installer.ps1
+# Or: ./scripts/build-installer.ps1 -Compiler 'C:\path\to\ISCC.exe'
+```
+
+The installer is unsigned. WebView2 is required for Arca login, as described below.
+
+### From source
+
 Install Rust stable, then:
 
 ```sh

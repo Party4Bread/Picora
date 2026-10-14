@@ -4,6 +4,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -13,6 +16,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -26,7 +32,16 @@ jobs:
       - run: cargo build --locked --release
       - name: Package unsigned desktop build
         run: python scripts/package.py
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/build-installer.ps1
+      - name: Test Windows install, upgrade, and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-installer.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: picora-${{ runner.os }}-${{ runner.arch }}
           path: dist/*
+          if-no-files-found: error
