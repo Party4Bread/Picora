@@ -25,24 +25,17 @@ if ((Get-FileHash $installed).Hash -ne (Get-FileHash "$root\target\release\picor
     throw 'Installed executable differs from release build'
 }
 $uninstaller = Join-Path $destination 'unins000.exe'
-$env:PICORA_DATA_DIR = Join-Path $env:RUNNER_TEMP 'picora-installer-test-data'
-$app = Start-Process -FilePath $installed -ArgumentList '--background' -WindowStyle Hidden -PassThru
+# Exercise loader dependencies without requiring a graphical desktop on the runner.
+$help = Start-Process -FilePath $installed -ArgumentList '--help' -WindowStyle Hidden -Wait -PassThru
+if ($help.ExitCode -ne 0) { throw 'Installed executable could not start' }
+# Model the running-app mutex; native viewport tests run on an interactive desktop.
+$guard = [System.Threading.Mutex]::new($false, 'Local\Picora.Desktop')
 try {
-    $guard = $null
-    for ($attempt = 0; $attempt -lt 100; $attempt++) {
-        if ($app.HasExited) { throw 'Installed app exited before tray startup' }
-        if ([System.Threading.Mutex]::TryOpenExisting('Local\Picora.Desktop', [ref]$guard)) { break }
-        Start-Sleep -Milliseconds 100
-    }
-    if (-not $guard) { throw 'Installed app did not create installer guard' }
-    $guard.Dispose()
     $blocked = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -WindowStyle Hidden -Wait -PassThru
     if ($blocked.ExitCode -eq 0 -or -not (Test-Path -LiteralPath $installed)) {
-        throw 'Uninstaller did not protect the running tray app'
+        throw 'Uninstaller did not protect the running-app mutex'
     }
-} finally {
-    if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force; $app.WaitForExit() }
-}
+} finally { $guard.Dispose() }
 $process = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -WindowStyle Hidden -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "Uninstall failed: $($process.ExitCode)" }
 if (Test-Path -LiteralPath $installed) { throw 'Uninstall left the executable behind' }
