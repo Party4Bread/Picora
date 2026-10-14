@@ -141,11 +141,14 @@ impl Services {
             s.bus.send(Event::Installed(result));
         });
     }
-    pub fn copy(&self, item: LibrarySticker, original: bool) {
+    pub fn copy(&self, item: LibrarySticker, mode: crate::media::CopyMode) {
         let s = self.clone();
         self.runtime.spawn(async move {
             let result = async {
                 let asset = s.asset(item.provider, &item.sticker.url).await?;
+                let cache = s.cache.clone();
+                let (asset, original) =
+                    tokio::task::spawn_blocking(move || cache.prepare_copy(asset, mode)).await??;
                 #[cfg(target_os = "linux")]
                 {
                     let wayland = s.wayland.lock().unwrap().clone();
@@ -202,13 +205,11 @@ impl Services {
                 repo.set_cookies(&cookies);
                 // Keep the usable session even if a catalog parser needs updating.
                 s.repos.lock().unwrap()[1] = repo.clone();
-                let persisted = tokio::task::spawn_blocking(move || crate::auth::save(&cookies))
-                    .await?
-                    .is_ok();
-                let storage = if persisted {
-                    "Session saved in your OS credential store."
-                } else {
-                    "Session is memory-only: OS credential storage is unavailable."
+                let persisted =
+                    tokio::task::spawn_blocking(move || crate::auth::save(&cookies)).await?;
+                let storage = match persisted {
+                    Ok(()) => "Session saved securely for your OS account.".to_owned(),
+                    Err(e) => format!("Session is memory-only: could not save securely ({e:#})."),
                 };
                 match repo.browse("", 1).await {
                     Ok(_) => Ok(format!("Arca connected. {storage}")),

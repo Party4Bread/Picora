@@ -28,6 +28,23 @@ fn pack() -> Pack {
     }
 }
 #[test]
+fn favorite_is_durable_before_any_media_download() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.sqlite3");
+    let p = pack();
+    {
+        let store = Store::open(&path).unwrap();
+        store.save_favorite_pack(&p).unwrap();
+    }
+    let store = Store::open(&path).unwrap();
+    assert!(store.packs().unwrap()[0].favorite);
+    assert_eq!(store.packs().unwrap()[0].pack.stickers.len(), 2);
+    store.favorite(&p.reference.key(), false).unwrap();
+    store.save_pack(&p).unwrap();
+    assert!(!store.packs().unwrap()[0].favorite);
+}
+
+#[test]
 fn validates_pack_urls_and_namespaces_ids() {
     assert_eq!(
         PackRef::parse("https://dccon.dcinside.com/#42")

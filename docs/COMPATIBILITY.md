@@ -8,9 +8,11 @@ Status is evidence-based; a compiling adapter is not a verified desktop integrat
 | DCInside Korean search, pack details, image retrieval | Live network smoke test passed on 2026-10-14 |
 | Arca HTML parsing | Synthetic fixtures only; unauthenticated HTTP requests returned 403 |
 | Arca login/session/catalog/download | Requires a real user login and live validation |
+| Windows session persistence | Synthetic large-session DPAPI roundtrip, replacement, fresh-process reload, corruption rejection, and deletion tests; legacy Credential Manager size limit reproduced |
 | Linux X11 picker/library/clipboard | Verified under Xvfb/Openbox: live catalog, pack import/restart, global shortcut, Enter selection, one Ctrl+V, valid PNG received, no Enter sent, clipboard alive while hidden, and CLI library activation |
 | GNOME/KDE Wayland shortcut, clipboard and keyboard portals | Implemented, not yet exercised in a real compatible session |
-| Windows/macOS native integration | Windows cross-target Clippy passed; macOS local cross-check blocked by absent Apple SDK; native CI/OS runs not yet observed |
+| Windows native integration | Native Rust 1.90 x64 MSVC: 16 tests, fmt and Clippy passed on 2026-10-14; hidden-window regression passed for existing/new library windows; live catalog/thumbnails, preview, pack download, library copy, CLI reopen and global picker shortcut verified. See [Windows diagnosis](WINDOWS-DEBUG.md). |
+| macOS native integration | Local cross-check blocked by absent Apple SDK; native CI/OS runs not yet observed |
 | Discord and Telegram image/file paste | Manual target-app verification required on each OS |
 
 ## Manual acceptance procedure

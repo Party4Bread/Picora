@@ -4,6 +4,29 @@ A Rust desktop sticker picker for Windows, macOS, and Linux. Browse DCInside and
 
 ## Run
 
+### Windows installer
+
+In GitHub **Actions → Rust desktop**, select a successful run and download the
+`picora-Windows-X64` artifact. Extract it and run
+`picora-<version>-windows-x64-setup.exe`. The same artifact includes the portable ZIP.
+The installer installs for the current user without administrator rights, adds
+Start menu shortcuts, and offers an optional desktop shortcut. Use Windows
+Installed apps to uninstall; downloaded packs, settings, and encrypted sessions
+are preserved. Quit Picora from its tray menu before upgrading or uninstalling.
+Launch at login remains an opt-in setting inside Picora.
+
+To build locally, install Inno Setup 6 and Python 3.11 or newer, then run:
+
+```powershell
+cargo build --release --locked
+./scripts/build-installer.ps1
+# Or: ./scripts/build-installer.ps1 -Compiler 'C:\path\to\ISCC.exe'
+```
+
+The installer is unsigned. WebView2 is required for Arca login, as described below.
+
+### From source
+
 Install Rust stable, then:
 
 ```sh
@@ -13,18 +36,35 @@ cargo run --release -- --library
 Linux build dependencies (Debian/Ubuntu):
 
 ```sh
-sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libdbus-1-dev
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libxdo-dev libgl1-mesa-dev libdbus-1-dev
 ```
 
 Windows needs the WebView2 runtime for Arca login. macOS uses the system WebKit. Linux runtime needs WebKitGTK 4.1, GTK 3, AppIndicator, and X11 or XWayland. On Wayland desktops, Picora deliberately creates XWayland windows because the current winit Wayland backend cannot hide/show transient windows. Keyboard and shortcut integration still uses Wayland desktop portals.
 
+For Windows source builds, install Visual Studio C++ Build Tools and a current
+Rust MSVC toolchain (`rustup update stable`). Rust 1.90 MSVC is verified; an old
+toolchain named `stable` may still need updating. Use PowerShell to isolate data:
+
+```powershell
+$env:PICORA_DATA_DIR = "$PWD\test-data"
+cargo +stable run --locked -- --library
+```
+
+Picora includes a local eframe 0.33.3 backport for Windows hidden-window
+handling. Keep `vendor/eframe` with the source checkout; see
+[patch provenance](vendor/eframe/PICORA-PATCH.md).
+
 ## Use
 
 1. Open **Discover**. Search DCInside, select a pack, and choose **Add pack to favorites**. You can also paste `https://dccon.dcinside.com/#41982` or an Arca `/e/<id>` URL into the search field.
-2. For Arca, use **Accounts → Sign in / reconnect**. Sign in on the actual website, then close that window to return its cookies to Picora. Credentials go to the OS credential store, or remain in memory if unavailable. Arca's live authenticated integration still needs verification; see the compatibility record.
+2. For Arca, use **Accounts → Sign in / reconnect**. Sign in on the actual website, then close that window to return its cookies to Picora. Windows saves cookies in `arca-session.dpapi`, encrypted for your Windows account; other platforms use the OS credential store. If saving fails, the session remains in memory and the error is shown. Arca's live authenticated integration still needs verification; see the compatibility record.
 3. Press **Ctrl+Shift+Space** to open the picker. Search pack/sticker titles, use arrows and Enter, or click a sticker. Picora copies the image, hides, and attempts the paste shortcut. It never presses Enter to send a message.
 4. Create custom groups in **Groups**. Right-click a downloaded sticker to add it, change its order, or remove it from a group.
-5. Hover over a sticker to preview animation. **Paste original file** offers the original GIF/WebP to apps that support file pastes. Normal selection copies a still image with transparency. Receiving apps decide which formats they accept.
+5. Hover over a sticker to preview animation. Normal selection pastes GIF and animated WebP as files; APNG gets an animated GIF copy for chat-attachment compatibility. **Paste original file** always preserves the source bytes, including APNG. **Copy still image** explicitly copies a PNG frame. GIF conversion may reduce colors and partial transparency; use the original when the destination supports APNG.
+
+Favorites are saved as soon as you add a pack, before media downloads finish.
+If you quit during a download, the favorite remains after restarting; uncached
+stickers download when used, or you can reopen the pack and retry the full download.
 
 The library window copies without auto-pasting because it is a management surface, not a transient picker. When automatic paste is unavailable, press Ctrl+V / Cmd+V in your chat app. Picora retains clipboard contents and original files after selection.
 
@@ -35,7 +75,7 @@ The library window copies without auto-pasting because it is a management surfac
 - **Linux X11:** global shortcut, focus restoration and X11 clipboard ownership.
 - **Wayland:** approve the desktop shortcut dialog; enable keyboard access in **Settings** for automatic paste. Remote Desktop permission requests keyboard access only. Clipboard portal support varies by desktop. If the shortcut portal is unavailable, bind `picora --show` in desktop settings. Unsupported or declined permissions produce a manual-paste fallback; sessions without XWayland cannot start the picker.
 
-Tray menu: open picker, open library, quit. Closing a window keeps the background process alive. Settings includes a Quit button for desktops without tray support.
+Picora starts quietly in the system tray by default, with no open window. On Windows, look in the taskbar's hidden-icons arrow if the icon is not visible. Right-click the Picora icon to open the picker or library, hide both windows with **Hide to tray**, or quit. Closing a window keeps Picora running in the tray; **Ctrl+Shift+Space** reopens the picker. If tray creation reports an error, the library opens with that error instead. Settings also includes a Quit button.
 
 ```sh
 picora --show
@@ -54,6 +94,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo build --locked
 # Explicit network smoke test, excluded from the normal suite:
 cargo test --test live -- --ignored
+# Windows interactive desktop: hidden picker/library/reopen regression
+cargo test --locked --test windows_viewports -- --ignored --nocapture
 ```
 
 Tests include real DCInside response fixtures and **synthetic** Arca fixtures; synthetic fixtures are not evidence of authenticated Arca compatibility. No credentials are required by CI. See [compatibility and validation](docs/COMPATIBILITY.md) for what has actually been tested.

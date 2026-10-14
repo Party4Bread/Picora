@@ -76,8 +76,16 @@ impl App {
                         )
                         .clicked()
                     {
-                        self.installing = true;
-                        self.services.install(pack.clone());
+                        // Persist the user's choice before starting network work.
+                        // A restart or partial download must not lose the favorite.
+                        match self.store.save_favorite_pack(&pack) {
+                            Ok(()) => {
+                                self.refresh();
+                                self.installing = true;
+                                self.services.install(pack.clone());
+                            }
+                            Err(e) => self.message(format!("Cannot save favorite: {e:#}"), true),
+                        }
                     }
                     ui.separator();
                     let items = pack
@@ -307,7 +315,7 @@ impl App {
         ui.add_space(24.);
         ui.strong("Arca");
         ui.label("Sign in on Arca’s own website. When you are done, close the login window to connect the session.");
-        ui.label("Picora stores session cookies in your OS credential store when available. Your password stays on the website.");
+        ui.label("Picora saves session cookies using OS-protected storage (Windows account encryption on Windows). Your password stays on the website.");
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(!self.login_busy, egui::Button::new("Sign in / reconnect"))

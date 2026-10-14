@@ -1,29 +1,90 @@
-# Windows freeze handoff
+# Windows freeze: diagnosis and fix
 
-## Report (2026-10-14)
+## Reproduced on 2026-10-14
 
-The Windows x64 GNU release starts, but clicking **Browse repositories** leaves the window open and unresponsive. The user confirmed this is a freeze, not the window disappearing. Root cause has not been established; no fix has been applied.
+The original `eb95cdc` branch builds and passes its 16 non-network tests on
+Windows, but the fresh library stops responding to both **Browse repositories**
+and **Discover**. This also occurs in a native Rust 1.90 x64 MSVC debug build,
+so it is not specific to the previously supplied GNU executable.
 
-## Reproduction and investigation
+Input traces showed that App::update and the library viewport stopped running
+after the root picker window was hidden. Leaving that window visible made the
+same Browse action immediately load the live catalog. No repository request
+or focus-command deadlock was involved.
 
-1. Build on Windows with `cargo run --locked` (default MSVC toolchain), preferably with a fresh `PICORA_DATA_DIR` directory.
-2. In the empty library, click **Browse repositories**.
-3. Compare with the **Discover** sidebar action. Capture debugger thread stacks while the UI is frozen.
-4. Also compare the GNU release ZIP if the native MSVC build does not reproduce it.
+## Root cause and patch
 
-The empty-state action is in `src/app/grid.rs`: it sets `Tab::Browse`, calls `open_library()`, then `browse()`. `open_library()` in `src/app/mod.rs` sends a Focus command to the library viewport, including when invoked from that same viewport. Investigate this path as well as the async request and repaint callbacks; this is a lead, not a confirmed diagnosis. Library rendering uses `show_viewport_immediate`.
+eframe 0.33.3 relies on native redraw events to update windows. Windows does not
+deliver those events to a hidden window. Picora hides its root picker and
+renders its library with `show_viewport_immediate`, which depends on root
+updates. The library therefore stalls, activation events are not consumed,
+and eframe spins its event loop.
 
-`src/services.rs` dispatches repository browsing on Tokio; completion sends `Event::Catalog` and requests an egui repaint. `src/app/events.rs` consumes results. Check all thread stacks rather than assuming the request itself blocks the UI.
+Upstream fixed hidden/minimized-window handling in
+[egui PR #7905](https://github.com/emilk/egui/pull/7905). Picora backports commit
+`cd3c38cf2a0d65330a645faeadb6f666bc8df8f2` through `vendor/eframe` and a Cargo
+patch override. The `new_events` path additionally establishes the active
+event-loop context: opening a new immediate library viewport after background
+startup otherwise panics. See `vendor/eframe/PICORA-PATCH.md` for provenance.
 
-The Windows binary declares `windows_subsystem = "windows"`, so stderr may not be visible. For local debugging, temporarily remove that attribute or attach a debugger to capture panic output and thread stacks.
+This keeps the 0.33 UI API and existing window behavior. Remove the override
+when deliberately migrating to a newer eframe lifecycle API.
 
-## Existing evidence
+## Regression and verification
 
-- Linux: 16 automated tests, fmt, Clippy, debug/release builds passed.
-- Live DCInside Korean search, details and image retrieval passed.
-- Linux Xvfb/Openbox: browsing, import/restart, hotkey picker and image paste passed.
-- Windows: cross-target Clippy and GNU release compilation passed; executable DLL dependencies inspected, ZIP includes x64 WebView2Loader.dll.
-- No native Windows feature testing was performed before the ZIP was delivered. The reported freeze remains unresolved.
-- Arca authenticated browsing and real Wayland/macOS integrations remain unverified.
+On an interactive Windows desktop:
 
-Previous Linux smoke caught a separate nested egui context lock in keyboard navigation; it was fixed and has a regression test in `src/app/grid.rs`. Do not assume that fix covers this Windows freeze.
+```powershell
+cargo test --locked
+cargo test --locked --test windows_viewports -- --ignored --nocapture
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo build --locked --release
+```
+
+The native regression runs each scenario in a subprocess with a 15-second
+deadline. It verifies that the library can update after the root has been
+hidden for two seconds and that the root actually becomes visible again.
+It also covers a library first created after hidden/background startup.
+The original dependency timed out. The upstream patch alone passed the first
+scenario but failed the second; the context adjustment passes both.
+
+Native app checks with an isolated data directory verified live DCInside
+catalog and thumbnails, pack preview, a 17-sticker pack download, library
+image copy, library close/reopen through `--library`, and Ctrl+Shift+Space
+picker activation. Arca authentication and insertion into Discord/Telegram
+remain separate acceptance work.
+
+To isolate manual testing:
+
+```powershell
+$env:PICORA_DATA_DIR = "$PWD\test-data"
+cargo run --locked -- --library
+```
+
+After closing the library, run `picora --library` or `picora --show` with the
+same data directory to exercise activation while all windows are hidden.
+
+## Arca session persistence
+
+The old implementation serialized the entire cookie jar into one Credential
+Manager password. Windows caps that blob at 2,560 bytes, and the keyring backend
+encodes passwords as UTF-16. A synthetic 2,000-character value reproduces the
+failure even when a small credential saves successfully. The UI previously
+discarded this error and called the credential store unavailable.
+
+Windows now uses current-user DPAPI encryption in `arca-session.dpapi` under
+the Picora data directory. Only ciphertext is written, using atomic replacement.
+Existing small Credential Manager sessions remain readable when no encrypted
+file exists. Sign-out removes both stores. Other platforms retain keyring storage.
+
+Tests cover a large cookie jar, fresh-process reload, replacement, failed-save
+preservation, corruption rejection, and deletion. Run the original size-limit
+reproduction explicitly; it creates and removes only a synthetic test credential:
+
+```powershell
+cargo test --locked --test windows_credentials -- --ignored
+```
+
+This verifies persistence, not an authenticated Arca catalog or download.
+Reconnect once after upgrading from a memory-only session.

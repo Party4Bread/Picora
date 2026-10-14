@@ -2,6 +2,7 @@ mod events;
 mod grid;
 mod library;
 use crate::{
+    media::CopyMode,
     model::*,
     platform::{
         self,
@@ -187,10 +188,13 @@ impl App {
         app.register_shortcut();
         match make_tray() {
             Ok(tray) => app._tray = Some(tray),
-            Err(e) => app.message(
-                format!("Tray unavailable: {e}. Use picora --show to reopen."),
-                true,
-            ),
+            Err(e) => {
+                app.library_open = true;
+                app.message(
+                    format!("Tray unavailable: {e}. Use picora --show to reopen."),
+                    true,
+                );
+            }
         }
         Ok(app)
     }
@@ -329,7 +333,7 @@ impl App {
             })
             .collect()
     }
-    fn choose(&mut self, item: LibrarySticker, original: bool, from_picker: bool) {
+    fn choose(&mut self, item: LibrarySticker, mode: CopyMode, from_picker: bool) {
         if self.pending.is_some() || self.paste_at.is_some() {
             return;
         }
@@ -342,7 +346,7 @@ impl App {
             from_picker,
         });
         self.message("Preparing clipboard…", false);
-        self.services.copy(item, original);
+        self.services.copy(item, mode);
     }
     fn report(&mut self, result: Result<()>, success: &str) {
         match result {
@@ -481,6 +485,7 @@ fn make_tray() -> Result<tray_icon::TrayIcon> {
     menu.append_items(&[
         &MenuItem::with_id("show", "Open picker", true, None),
         &MenuItem::with_id("library", "Open library", true, None),
+        &MenuItem::with_id("hide", "Hide to tray", true, None),
         &MenuItem::with_id("quit", "Quit Picora", true, None),
     ])?;
     let mut rgba = vec![0u8; 32 * 32 * 4];

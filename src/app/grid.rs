@@ -84,7 +84,7 @@ impl App {
             if ui.input(|i| i.key_pressed(egui::Key::Enter))
                 && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))))
             {
-                self.choose(items[self.selected].clone(), false, true);
+                self.choose(items[self.selected].clone(), CopyMode::Auto, true);
             }
         }
         let editing_text = ui.ctx().wants_keyboard_input();
@@ -128,15 +128,15 @@ impl App {
                             ));
                             if r.clicked() {
                                 self.selected = n;
-                                self.choose(item.clone(), false, picker);
+                                self.choose(item.clone(), CopyMode::Auto, picker);
                             }
                             r.context_menu(|ui| {
-                                if ui.button("Copy image").clicked() {
-                                    self.choose(item.clone(), false, false);
+                                if ui.button("Copy still image").clicked() {
+                                    self.choose(item.clone(), CopyMode::Still, false);
                                     ui.close();
                                 }
                                 if ui.button("Paste original file").clicked() {
-                                    self.choose(item.clone(), true, picker);
+                                    self.choose(item.clone(), CopyMode::Original, picker);
                                     ui.close();
                                 }
                                 ui.separator();

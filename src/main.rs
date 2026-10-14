@@ -7,6 +7,10 @@ fn main() {
         std::process::exit(1);
     }
 }
+fn starts_hidden(args: &[String]) -> bool {
+    !args.iter().any(|a| a == "--show" || a == "--library")
+}
+
 fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--auth-helper") {
@@ -14,7 +18,7 @@ fn run() -> Result<()> {
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
-            "Picora — Rust sticker picker\n\n  --show        Open the picker\n  --library     Open the library\n  --background  Start hidden\n  --help        Show this help\n\nDefault shortcut: Ctrl+Shift+Space"
+            "Picora — Rust sticker picker\n\nStarts in the system tray by default.\n\n  --show        Open the picker\n  --library     Open the library\n  --background  Start hidden (default)\n  --help        Show this help\n\nDefault shortcut: Ctrl+Shift+Space"
         );
         return Ok(());
     }
@@ -32,9 +36,11 @@ fn run() -> Result<()> {
             .to_owned()
     };
     let library = args.iter().any(|a| a == "--library");
-    let background = args.iter().any(|a| a == "--background");
+    let background = starts_hidden(&args);
     let (tx, rx) = mpsc::channel();
-    let Some(_instance) = picora::platform::instance::Instance::acquire(&root, library, tx)? else {
+    let Some(_instance) =
+        picora::platform::instance::Instance::acquire(&root, library, background, tx)?
+    else {
         return Ok(());
     };
     #[cfg(target_os = "linux")]
@@ -75,4 +81,23 @@ fn run() -> Result<()> {
     .map_err(|e| anyhow::anyhow!("Desktop UI failed: {e}"))?;
     drop(runtime);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::starts_hidden;
+
+    #[test]
+    fn tray_is_default_and_windows_are_explicit() {
+        for (args, hidden) in [
+            (vec![], true),
+            (vec!["--background"], true),
+            (vec!["--show"], false),
+            (vec!["--library"], false),
+            (vec!["--background", "--library"], false),
+        ] {
+            let args: Vec<String> = args.into_iter().map(str::to_owned).collect();
+            assert_eq!(starts_hidden(&args), hidden, "{args:?}");
+        }
+    }
 }

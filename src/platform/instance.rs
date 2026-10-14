@@ -13,9 +13,45 @@ use std::{
 
 pub struct Instance {
     _lock: File,
+    #[cfg(target_os = "windows")]
+    _installer_guard: InstallerGuard,
+}
+
+// Inno Setup checks this named mutex before installation and uninstallation.
+// Holding a handle is sufficient: this does not replace the per-data-dir lock.
+#[cfg(target_os = "windows")]
+struct InstallerGuard(windows_sys::Win32::Foundation::HANDLE);
+#[cfg(target_os = "windows")]
+impl InstallerGuard {
+    fn new() -> Result<Self> {
+        let name: Vec<u16> = "Local\\Picora.Desktop"
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        // SAFETY: name is NUL-terminated and lives through this synchronous call.
+        let handle = unsafe {
+            windows_sys::Win32::System::Threading::CreateMutexW(std::ptr::null(), 0, name.as_ptr())
+        };
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error()).context("Cannot create installer guard");
+        }
+        Ok(Self(handle))
+    }
+}
+#[cfg(target_os = "windows")]
+impl Drop for InstallerGuard {
+    fn drop(&mut self) {
+        // SAFETY: this struct owns the non-null handle returned by CreateMutexW.
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0) };
+    }
 }
 impl Instance {
-    pub fn acquire(root: &Path, library: bool, tx: Sender<bool>) -> Result<Option<Self>> {
+    pub fn acquire(
+        root: &Path,
+        library: bool,
+        background: bool,
+        tx: Sender<bool>,
+    ) -> Result<Option<Self>> {
         std::fs::create_dir_all(root)?;
         #[cfg(unix)]
         {
@@ -39,6 +75,9 @@ impl Instance {
             socket.to_fs_name::<GenericFilePath>()?
         };
         if lock.try_lock_exclusive().is_err() {
+            if background {
+                return Ok(None);
+            }
             let mut last = None;
             for _ in 0..20 {
                 match Stream::connect(name.clone()) {
@@ -70,6 +109,10 @@ impl Instance {
                 });
             }
         });
-        Ok(Some(Self { _lock: lock }))
+        Ok(Some(Self {
+            _lock: lock,
+            #[cfg(target_os = "windows")]
+            _installer_guard: InstallerGuard::new()?,
+        }))
     }
 }

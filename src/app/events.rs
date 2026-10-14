@@ -21,6 +21,10 @@ impl App {
             match e.id.as_ref() {
                 "show" => self.show_picker(ctx),
                 "library" => self.open_library(),
+                "hide" => {
+                    self.hide_picker(ctx);
+                    self.library_open = false;
+                }
                 "quit" => self.quit = true,
                 _ => {}
             }
@@ -51,10 +55,9 @@ impl App {
                 Event::Installed(result) => {
                     self.installing = false;
                     match result {
-                        Ok(p) => match self.store.save_pack(&p).and_then(|_| self.store.favorite(&p.reference.key(), true)) {
-                            Ok(()) => { self.message(format!("Added {} · available offline", p.title), false); self.refresh(); }
-                            Err(e) => self.message(e.to_string(), true),
-                        },
+                        // The favorite was committed before downloading. Do not
+                        // overwrite an unfavorite/removal made during the download.
+                        Ok(p) => { self.message(format!("Downloaded {} · available offline", p.title), false); self.refresh(); }
                         Err(e) => self.message(format!("Download incomplete: {e:#}. Open the pack and retry; cached images are reused."), true),
                     }
                 }
