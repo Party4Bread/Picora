@@ -426,12 +426,44 @@ impl App {
                             .iter()
                             .find(|g| g.id == *id)
                             .map(|g| g.name.as_str())
-                            .unwrap_or("Groups"),
-                        _ => "Groups",
+                            .unwrap_or("Packs & groups"),
+                        Filter::Pack(key) => self
+                            .packs
+                            .iter()
+                            .find(|p| p.pack.reference.key() == *key)
+                            .map(|p| p.pack.title.as_str())
+                            .unwrap_or("Packs & groups"),
+                        _ => "Packs & groups",
                     })
                     .show_ui(ui, |ui| {
-                        for g in &self.groups {
-                            ui.selectable_value(&mut self.filter, Filter::Group(g.id), &g.name);
+                        ui.label("Saved packs");
+                        for p in &self.packs {
+                            if ui
+                                .selectable_value(
+                                    &mut self.filter,
+                                    Filter::Pack(p.pack.reference.key()),
+                                    &p.pack.title,
+                                )
+                                .changed()
+                            {
+                                self.selected = 0;
+                            }
+                        }
+                        if !self.groups.is_empty() {
+                            ui.separator();
+                            ui.label("Custom groups");
+                            for g in &self.groups {
+                                if ui
+                                    .selectable_value(
+                                        &mut self.filter,
+                                        Filter::Group(g.id),
+                                        &g.name,
+                                    )
+                                    .changed()
+                                {
+                                    self.selected = 0;
+                                }
+                            }
                         }
                     });
             });
@@ -543,3 +575,6 @@ fn make_tray() -> Result<tray_icon::TrayIcon> {
         .with_menu(Box::new(menu))
         .build()?)
 }
+
+#[cfg(test)]
+mod library_tests;
