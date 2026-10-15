@@ -231,3 +231,22 @@ fn legacy_library_migrates_without_losing_stickers_or_favorites() {
         assert_eq!(store.favorite_items().unwrap().len(), 2);
     }
 }
+
+#[test]
+fn reopening_after_old_binary_does_not_repeat_column_migrations() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.sqlite3");
+    {
+        let store = Store::open(&path).unwrap();
+        store.save_favorite_pack(&pack()).unwrap();
+        store.favorite_sticker("dcinside:42", "a", false).unwrap();
+    }
+    // v0.1.0/early v0.1.1 reset this marker whenever they open a database.
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.pragma_update(None, "user_version", 1).unwrap();
+    drop(conn);
+    let store = Store::open(&path).expect("existing columns must not be added twice");
+    assert_eq!(store.packs().unwrap().len(), 1);
+    assert_eq!(store.favorite_items().unwrap().len(), 1);
+    assert_eq!(store.recents().unwrap().len(), 2);
+}
