@@ -118,3 +118,116 @@ fn refreshing_pack_preserves_group_membership_and_favorites() {
             .is_err()
     );
 }
+
+#[test]
+fn recent_lists_used_first_then_newly_added_and_preserves_import_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.sqlite3");
+    let store = Store::open(&path).unwrap();
+    let old = pack();
+    store.save_pack(&old).unwrap();
+    let mut new = pack();
+    new.reference.id = "99".into();
+    store.save_pack(&new).unwrap();
+    store.record_recent("dcinside:42", "a").unwrap();
+    store.record_recent("dcinside:99", "b").unwrap();
+    let keys = |store: &Store| {
+        store
+            .recents()
+            .unwrap()
+            .iter()
+            .map(|s| format!("{}:{}", s.pack_key, s.sticker.id))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        keys(&store),
+        [
+            "dcinside:99:b",
+            "dcinside:42:a",
+            "dcinside:99:a",
+            "dcinside:42:b"
+        ]
+    );
+    store.save_pack(&old).unwrap();
+    drop(store);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(
+        keys(&store),
+        [
+            "dcinside:99:b",
+            "dcinside:42:a",
+            "dcinside:99:a",
+            "dcinside:42:b"
+        ]
+    );
+}
+
+#[test]
+fn individual_favorites_override_pack_and_survive_refresh() {
+    let store = Store::open_in_memory().unwrap();
+    let p = pack();
+    store.save_favorite_pack(&p).unwrap();
+    store.favorite_sticker("dcinside:42", "a", false).unwrap();
+    store.save_favorite_pack(&p).unwrap();
+    assert_eq!(
+        store
+            .favorite_items()
+            .unwrap()
+            .iter()
+            .map(|s| s.sticker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["b"]
+    );
+    store.favorite("dcinside:42", false).unwrap();
+    store.favorite_sticker("dcinside:42", "a", true).unwrap();
+    assert_eq!(
+        store
+            .favorite_items()
+            .unwrap()
+            .iter()
+            .map(|s| s.sticker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["a"]
+    );
+    assert!(
+        store
+            .favorite_sticker("dcinside:42", "missing", true)
+            .is_err()
+    );
+}
+
+#[test]
+fn removing_individual_sticker_cleans_groups_and_history_without_removing_siblings() {
+    let store = Store::open_in_memory().unwrap();
+    store.save_favorite_pack(&pack()).unwrap();
+    let group = store.create_group("Group").unwrap();
+    store.add_to_group(group, "dcinside:42", "a").unwrap();
+    store.record_recent("dcinside:42", "a").unwrap();
+    store.remove_sticker("dcinside:42", "a").unwrap();
+    assert!(store.group_items(group).unwrap().is_empty());
+    assert_eq!(store.recents().unwrap().len(), 1);
+    assert_eq!(store.packs().unwrap()[0].pack.stickers[0].id, "b");
+    store.remove_sticker("dcinside:42", "b").unwrap();
+    assert!(store.packs().unwrap().is_empty());
+}
+
+#[test]
+fn legacy_library_migrates_without_losing_stickers_or_favorites() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legacy.sqlite3");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch("CREATE TABLE packs(key TEXT PRIMARY KEY,data TEXT NOT NULL,favorite INTEGER NOT NULL DEFAULT 0); CREATE TABLE stickers(pack TEXT NOT NULL REFERENCES packs(key) ON DELETE CASCADE,id TEXT NOT NULL,PRIMARY KEY(pack,id)); PRAGMA user_version=1;").unwrap();
+    conn.execute(
+        "INSERT INTO packs VALUES('dcinside:42',?1,1)",
+        [serde_json::to_string(&pack()).unwrap()],
+    )
+    .unwrap();
+    conn.execute_batch("INSERT INTO stickers VALUES('dcinside:42','a'),('dcinside:42','b');")
+        .unwrap();
+    drop(conn);
+    for _ in 0..2 {
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.recents().unwrap().len(), 2);
+        assert_eq!(store.favorite_items().unwrap().len(), 2);
+    }
+}

@@ -17,7 +17,7 @@ use tokio::sync::Semaphore;
 pub enum Event {
     UpdateHealthFailed(String),
     Catalog(u64, Result<Vec<Pack>>),
-    Preview(Result<Pack>),
+    Preview(u64, Result<Pack>),
     Installed(Result<Pack>),
     Media(
         String,
@@ -85,11 +85,11 @@ impl Services {
             s.bus.send(Event::Catalog(id, result));
         });
     }
-    pub fn preview(&self, r: PackRef) {
+    pub fn preview(&self, r: PackRef, id: u64) {
         let s = self.clone();
         self.runtime.spawn(async move {
             let result = s.repo(r.provider).pack(&r).await;
-            s.bus.send(Event::Preview(result));
+            s.bus.send(Event::Preview(id, result));
         });
     }
     pub async fn asset(&self, p: Provider, url: &str) -> Result<Asset> {

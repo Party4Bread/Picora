@@ -46,7 +46,8 @@ impl App {
                         }
                     }
                 }
-                Event::Preview(result) => {
+                Event::Preview(id, result) => {
+                    if id != self.catalog_id { continue; }
                     self.browsing = false;
                     match result {
                         Ok(p) => self.preview = Some(p),

@@ -68,18 +68,35 @@ impl App {
     pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: Vec<LibrarySticker>, picker: bool) {
         if items.is_empty() {
             ui.add_space(32.);
-            ui.heading("Your next reaction starts here");
-            ui.label("Browse sticker packs, then add your favorites.");
-            if ui.button("Browse repositories").clicked() {
-                self.tab = Tab::Browse;
-                self.open_library();
-                self.browse();
+            if !self.search.trim().is_empty() {
+                ui.heading("No matching stickers");
+                ui.label("Try another search or clear it to see this collection.");
+                if ui.button("Clear search").clicked() {
+                    self.search.clear();
+                }
+            } else if self.packs.is_empty() {
+                ui.heading("Your library is empty");
+                ui.label("Browse a pack and add it to your library.");
+                if ui.button("Browse repositories").clicked() {
+                    self.tab = Tab::Browse;
+                    self.open_library();
+                    self.browse();
+                }
+            } else {
+                ui.heading("No stickers in this collection");
+                ui.label("Choose another pack or manage your stickers in the library.");
+                if ui.button("Show all stickers").clicked() {
+                    self.filter = Filter::All;
+                }
             }
             return;
         }
         let columns = ((ui.available_width() + 8.) / 88.).floor().max(1.) as usize;
-        self.selected = self.selected.min(items.len() - 1);
-        if picker && self.pending.is_none() {
+        if picker {
+            self.selected = self.selected.min(items.len() - 1);
+        }
+        let popup_open = egui::Popup::is_any_open(ui.ctx());
+        if picker && self.pending.is_none() && !popup_open {
             self.selected = navigate(ui, self.selected, items.len(), columns);
             if ui.input(|i| i.key_pressed(egui::Key::Enter))
                 && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))))
@@ -89,6 +106,7 @@ impl App {
         }
         let editing_text = ui.ctx().wants_keyboard_input();
         let navigation = picker
+            && !popup_open
             && !editing_text
             && ui.input(|i| {
                 [
@@ -106,82 +124,49 @@ impl App {
             "library-grid"
         });
         if navigation {
-            scroll = scroll.vertical_scroll_offset((self.selected / columns) as f32 * 88.);
+            scroll = scroll.vertical_scroll_offset(
+                (self.selected / columns) as f32 * (80. + ui.spacing().item_spacing.y),
+            );
         }
-        scroll.show_rows(ui, 88., items.len().div_ceil(columns), |ui, rows| {
+        let row_height = if picker {
+            80.
+        } else {
+            let button_height = (ui.text_style_height(&egui::TextStyle::Button)
+                + 2. * ui.spacing().button_padding.y)
+                .max(ui.spacing().interact_size.y);
+            80. + ui.spacing().item_spacing.y + button_height
+        };
+        scroll.show_rows(ui, row_height, items.len().div_ceil(columns), |ui, rows| {
             for row in rows {
                 ui.horizontal(|ui| {
                     for column in 0..columns {
                         let n = row * columns + column;
                         let Some(item) = items.get(n) else { break };
                         ui.push_id(format!("{}:{}", item.pack_key, item.sticker.id), |ui| {
-                            let r = self.thumb(
-                                ui,
-                                item.provider,
-                                &item.sticker.url,
-                                80.,
-                                picker && n == self.selected,
-                            );
-                            r.clone().on_hover_text(format!(
-                                "{}\n{} · {}\nRight-click for more",
-                                item.sticker.label, item.pack_title, item.provider
-                            ));
-                            if r.clicked() {
-                                self.selected = n;
-                                self.choose(item.clone(), CopyMode::Auto, picker);
-                            }
-                            r.context_menu(|ui| {
-                                if ui.button("Copy still image").clicked() {
-                                    self.choose(item.clone(), CopyMode::Still, false);
-                                    ui.close();
+                            ui.vertical(|ui| {
+                                ui.set_width(80.);
+                                let r = self.thumb(
+                                    ui,
+                                    item.provider,
+                                    &item.sticker.url,
+                                    80.,
+                                    picker && n == self.selected,
+                                );
+                                r.clone().on_hover_text(format!(
+                                    "{}\n{} · {}\nRight-click for more",
+                                    item.sticker.label, item.pack_title, item.provider
+                                ));
+                                if r.clicked() {
+                                    if picker {
+                                        self.selected = n;
+                                    }
+                                    self.choose(item.clone(), CopyMode::Auto, picker);
                                 }
-                                if ui.button("Paste original file").clicked() {
-                                    self.choose(item.clone(), CopyMode::Original, picker);
-                                    ui.close();
-                                }
-                                ui.separator();
-                                ui.label("Add to group");
-                                for group in self.groups.clone() {
-                                    if ui.button(&group.name).clicked() {
-                                        let result = self.store.add_to_group(
-                                            group.id,
-                                            &item.pack_key,
-                                            &item.sticker.id,
-                                        );
-                                        self.report(result, "Added to group");
-                                        ui.close();
-                                    }
-                                }
-                                if let Filter::Group(id) = self.filter {
-                                    if ui.button("Move earlier").clicked() {
-                                        let r = self.store.move_in_group(
-                                            id,
-                                            &item.pack_key,
-                                            &item.sticker.id,
-                                            -1,
-                                        );
-                                        self.report(r, "Order updated");
-                                        ui.close();
-                                    }
-                                    if ui.button("Move later").clicked() {
-                                        let r = self.store.move_in_group(
-                                            id,
-                                            &item.pack_key,
-                                            &item.sticker.id,
-                                            1,
-                                        );
-                                        self.report(r, "Order updated");
-                                        ui.close();
-                                    }
-                                    if ui.button("Remove from group").clicked() {
-                                        let r = self.store.remove_from_group(
-                                            id,
-                                            &item.pack_key,
-                                            &item.sticker.id,
-                                        );
-                                        self.report(r, "Removed from group");
-                                        ui.close();
-                                    }
+                                r.context_menu(|ui| self.sticker_menu(ui, item, picker));
+                                if !picker {
+                                    ui.menu_button("Manage", |ui| {
+                                        self.sticker_menu(ui, item, false)
+                                    });
                                 }
                             });
                         });
@@ -189,6 +174,98 @@ impl App {
                 });
             }
         });
+    }
+    fn sticker_menu(&mut self, ui: &mut egui::Ui, item: &LibrarySticker, picker: bool) {
+        if ui.button("Copy still image").clicked() {
+            self.choose(item.clone(), CopyMode::Still, false);
+            ui.close();
+        }
+        if ui.button("Paste original file").clicked() {
+            self.choose(item.clone(), CopyMode::Original, picker);
+            ui.close();
+        }
+        ui.separator();
+        let favorite = match self
+            .store
+            .sticker_favorite(&item.pack_key, &item.sticker.id)
+        {
+            Ok(Some(value)) => value,
+            Ok(None) => {
+                ui.label("Add this pack to your library to manage its stickers.");
+                return;
+            }
+            Err(e) => {
+                ui.label(format!("Cannot read sticker: {e}"));
+                return;
+            }
+        };
+        if ui
+            .button(if favorite {
+                "Unfavorite sticker"
+            } else {
+                "Favorite sticker"
+            })
+            .clicked()
+        {
+            let result = self
+                .store
+                .favorite_sticker(&item.pack_key, &item.sticker.id, !favorite);
+            self.report(result, "Sticker favorite updated");
+            ui.close();
+        }
+        if ui
+            .button("Remove sticker from library")
+            .on_hover_text(
+                "Removes it from groups and Recent too. Reimport the source pack to restore it.",
+            )
+            .clicked()
+        {
+            let result = self.store.remove_sticker(&item.pack_key, &item.sticker.id);
+            self.report(
+                result,
+                "Sticker removed. Reimport its source pack to restore it.",
+            );
+            self.refresh();
+            ui.close();
+        }
+        ui.separator();
+        ui.label("Add to group");
+        if self.groups.is_empty() {
+            ui.label("Create a custom group in Library → Groups.");
+        }
+
+        for group in self.groups.clone() {
+            if ui.button(&group.name).clicked() {
+                let result = self
+                    .store
+                    .add_to_group(group.id, &item.pack_key, &item.sticker.id);
+                self.report(result, "Added to group");
+                ui.close();
+            }
+        }
+        if let Filter::Group(id) = self.filter {
+            if ui.button("Move earlier").clicked() {
+                let r = self
+                    .store
+                    .move_in_group(id, &item.pack_key, &item.sticker.id, -1);
+                self.report(r, "Order updated");
+                ui.close();
+            }
+            if ui.button("Move later").clicked() {
+                let r = self
+                    .store
+                    .move_in_group(id, &item.pack_key, &item.sticker.id, 1);
+                self.report(r, "Order updated");
+                ui.close();
+            }
+            if ui.button("Remove from group").clicked() {
+                let r = self
+                    .store
+                    .remove_from_group(id, &item.pack_key, &item.sticker.id);
+                self.report(r, "Removed from group");
+                ui.close();
+            }
+        }
     }
 }
 
