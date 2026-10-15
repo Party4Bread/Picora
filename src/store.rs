@@ -23,20 +23,25 @@ impl Store {
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ")?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version < 2 {
-            let tx = conn.unchecked_transaction()?;
-            tx.execute_batch(
-                "ALTER TABLE stickers ADD COLUMN added INTEGER NOT NULL DEFAULT 0;
-                UPDATE stickers SET added=rowid;
-                PRAGMA user_version=2;",
-            )?;
-            tx.commit()?;
-        }
         if version < 3 {
             let tx = conn.unchecked_transaction()?;
-            tx.execute_batch(
-                "ALTER TABLE stickers ADD COLUMN favorite INTEGER; PRAGMA user_version=3;",
-            )?;
+            // Older binaries reset user_version to 1 on every open, including
+            // after an updater rollback. Inspect the schema before migrating.
+            let columns: Vec<String> = {
+                let mut q = tx.prepare("PRAGMA table_info(stickers)")?;
+                q.query_map([], |r| r.get(1))?
+                    .collect::<rusqlite::Result<_>>()?
+            };
+            if !columns.iter().any(|name| name == "added") {
+                tx.execute_batch(
+                    "ALTER TABLE stickers ADD COLUMN added INTEGER NOT NULL DEFAULT 0;
+                    UPDATE stickers SET added=rowid;",
+                )?;
+            }
+            if !columns.iter().any(|name| name == "favorite") {
+                tx.execute_batch("ALTER TABLE stickers ADD COLUMN favorite INTEGER;")?;
+            }
+            tx.pragma_update(None, "user_version", 3)?;
             tx.commit()?;
         }
         Ok(Self { conn })
