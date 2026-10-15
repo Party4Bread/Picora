@@ -5,6 +5,9 @@ impl App {
         ui.separator();
         ui.heading("Updates");
         ui.label(format!("Picora {}", env!("CARGO_PKG_VERSION")));
+        if let Some(error) = &self.updates.previous_failure {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+        }
         if ui
             .checkbox(
                 &mut self.settings.check_updates_automatically,

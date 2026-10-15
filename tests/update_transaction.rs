@@ -87,3 +87,54 @@ fn startup_gate_covers_preparation_before_a_journal_exists() {
     drop(gate);
     assert!(layout.startup_gate().is_ok());
 }
+#[test]
+fn partial_apply_failure_restores_earlier_files() {
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().join("app");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("picora"), b"old").unwrap();
+    fs::write(root.join("blocked"), b"user file").unwrap();
+    let stage = d.path().join("staged");
+    fs::create_dir_all(stage.join("blocked")).unwrap();
+    fs::write(stage.join("picora"), b"new").unwrap();
+    fs::write(stage.join("blocked/file"), b"new").unwrap();
+    let staged = StagedUpdate {
+        root: stage,
+        target: Target::LinuxX86_64,
+        files: vec!["picora".into(), "blocked/file".into()],
+    };
+    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    let mut tx = Transaction::prepare(&layout, &staged).unwrap();
+    assert!(tx.apply().is_err());
+    tx.rollback().unwrap();
+    assert_eq!(fs::read(root.join("picora")).unwrap(), b"old");
+    assert_eq!(fs::read(root.join("blocked")).unwrap(), b"user file");
+}
+#[test]
+fn old_inventory_removes_only_obsolete_owned_files() {
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().join("app");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("picora"), b"old").unwrap();
+    fs::write(root.join("obsolete.txt"), b"old").unwrap();
+    fs::write(root.join("unrelated.txt"), b"keep").unwrap();
+    fs::write(
+        root.join(".picora-files.json"),
+        br#"["picora","obsolete.txt"]"#,
+    )
+    .unwrap();
+    let stage = d.path().join("staged");
+    fs::create_dir(&stage).unwrap();
+    fs::write(stage.join("picora"), b"new").unwrap();
+    let staged = StagedUpdate {
+        root: stage,
+        target: Target::LinuxX86_64,
+        files: vec!["picora".into()],
+    };
+    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    let mut tx = Transaction::prepare(&layout, &staged).unwrap();
+    tx.apply().unwrap();
+    tx.commit().unwrap();
+    assert!(!root.join("obsolete.txt").exists());
+    assert_eq!(fs::read(root.join("unrelated.txt")).unwrap(), b"keep");
+}

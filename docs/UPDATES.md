@@ -2,7 +2,7 @@
 
 Settings → Updates checks stable GitHub Releases from Party4Bread/Picora. Automatic startup checks are enabled by default and can be disabled. Checks run in the background. Nothing is installed until **Update and restart** is clicked. Cancelling the download leaves the installed app unchanged.
 
-Updates replace application files on Windows, Linux and macOS. The Windows installer is only for first installation; the updater does not invoke it. Both installed and portable Windows copies keep their existing location. The uninstaller remains intact; Windows Installed Apps may show the original installer version until an installer upgrade. Picora itself shows its current version.
+Updates replace application files on Windows, Linux and macOS. The Windows installer is only for first installation; the updater does not invoke it. Both installed and portable Windows copies keep their existing location. The uninstaller remains intact, and the helper holds the installer mutex while replacing files; Windows Installed Apps may show the original installer version until an installer upgrade. Picora itself shows its current version.
 
 The running installation must be writable. No administrator elevation is requested. On macOS, run the extracted .app from a writable directory, not inside a read-only disk image. Supported release targets are Windows x86_64, Linux x86_64 and macOS Apple Silicon (aarch64). Other targets can still build from source but receive no automatic replacement.
 
@@ -27,4 +27,4 @@ Downloads use HTTPS and trust this GitHub repository's release metadata. Checksu
 
 ## Verification
 
-`cargo test --locked` includes native headless helper tests through `examples/update_test_child.rs`: real parent exit, replacement, acknowledgement, and rollback on failed startup. Filesystem and archive tests cover preservation, recovery and unsafe paths. `python -m unittest discover -s scripts -p test_update_manifest.py` checks the release contract. These tests do not substitute for a full native desktop update smoke test on each OS; consult the implementation report for which runs were actually observed.
+`cargo test --locked` includes native headless helper tests through `examples/update_test_child.rs`: real parent exit, replacement, acknowledgement, rollback on crashed or hung startup, and external recovery after an interrupted transaction. Filesystem and archive tests cover preservation, recovery and unsafe paths. `python -m unittest discover -s scripts -p test_update_manifest.py` checks the release contract. These tests do not substitute for a full native desktop update smoke test on each OS; consult the implementation report for which runs were actually observed.

@@ -71,6 +71,11 @@ fn run() -> Result<()> {
         if version == "new" && std::env::var_os("PICORA_TEST_CRASH").is_some() {
             std::process::exit(9);
         }
+        if version == "new" && std::env::var_os("PICORA_TEST_HANG").is_some() {
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
         helper::acknowledge_health()?;
         fs::write(layout.root.join("started.txt"), &version)?;
         fs::write(
@@ -80,16 +85,16 @@ fn run() -> Result<()> {
         std::thread::sleep(Duration::from_secs(1));
         return Ok(());
     }
-    for crash in [false, true] {
-        scenario(crash)?;
+    for mode in ["healthy", "crash", "hang"] {
+        scenario(mode)?;
     }
     interrupted_recovery()?;
     println!(
-        "native updater process tests passed (replacement, parent wait, health acknowledgement, rollback)"
+        "native updater process tests passed (replacement, parent wait, health acknowledgement, crash/hang rollback, external recovery)"
     );
     Ok(())
 }
-fn scenario(crash: bool) -> Result<()> {
+fn scenario(mode: &str) -> Result<()> {
     let temp = tempfile::tempdir()?;
     let target = Target::current().context("Unsupported CI target")?;
     let root = temp.path().join(if target == Target::MacosAarch64 {
@@ -108,8 +113,11 @@ fn scenario(crash: bool) -> Result<()> {
     cmd.arg("--initiate")
         .arg(job)
         .env("PICORA_TEST_PARENT_DELAY", "1");
-    if crash {
+    if mode == "crash" {
         cmd.env("PICORA_TEST_CRASH", "1");
+    }
+    if mode == "hang" {
+        cmd.env("PICORA_TEST_HANG", "1");
     }
     let mut parent = cmd.spawn()?;
     std::thread::sleep(Duration::from_millis(300));
@@ -122,13 +130,13 @@ fn scenario(crash: bool) -> Result<()> {
     loop {
         if let Ok(v) = fs::read_to_string(layout.root.join("started.txt")) {
             ensure!(
-                v == if crash { "old" } else { "new" },
+                v == if mode == "healthy" { "new" } else { "old" },
                 "Wrong version restarted"
             );
             break;
         }
         ensure!(
-            start.elapsed() < Duration::from_secs(20),
+            start.elapsed() < Duration::from_secs(80),
             "Updated child did not start"
         );
         std::thread::sleep(Duration::from_millis(50));

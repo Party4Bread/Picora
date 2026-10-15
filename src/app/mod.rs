@@ -342,7 +342,12 @@ impl App {
             .collect()
     }
     fn choose(&mut self, item: LibrarySticker, mode: CopyMode, from_picker: bool) {
-        if self.pending.is_some() || self.paste_at.is_some() {
+        if matches!(
+            self.updates.state,
+            crate::update::controller::State::HandingOff
+        ) || self.pending.is_some()
+            || self.paste_at.is_some()
+        {
             return;
         }
         let target = if from_picker { self.target } else { None };
@@ -462,6 +467,14 @@ impl eframe::App for App {
             self.paste_at = None;
             self.pending = None;
             self.quit = true;
+        }
+        if matches!(
+            self.updates.state,
+            crate::update::controller::State::HandingOff
+        ) {
+            self.services.cancel_paste();
+            self.paste_at = None;
+            self.pending = None;
         }
         self.handle_events(ctx);
         if self.quit {

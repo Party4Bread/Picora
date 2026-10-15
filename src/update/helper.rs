@@ -229,6 +229,8 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
         "Invalid installation location"
     );
     let _gate = job.layout.startup_gate()?;
+    #[cfg(windows)]
+    let _installer_guard = crate::platform::instance::InstallerGuard::new()?;
     // Validate writable destination before asking the desktop to exit.
     let state = job.layout.state_dir()?;
     fs::create_dir_all(&state)?;
@@ -255,6 +257,9 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
             Ok(())
         })
     };
+    if outcome.is_ok() && !state.join("committed").exists() {
+        let _ = fs::remove_file(state.join("last-error.txt"));
+    }
     if let Err(e) = &outcome {
         let _ = fs::write(
             state.join("last-error.txt"),

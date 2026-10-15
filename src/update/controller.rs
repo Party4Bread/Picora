@@ -29,6 +29,7 @@ enum Event {
 }
 pub struct Controller {
     pub state: State,
+    pub previous_failure: Option<String>,
     generation: u64,
     tx: mpsc::Sender<(u64, Event)>,
     rx: mpsc::Receiver<(u64, Event)>,
@@ -39,9 +40,8 @@ impl Default for Controller {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
-            state: super::helper::last_failure()
-                .map(State::Error)
-                .unwrap_or(State::Idle),
+            state: State::Idle,
+            previous_failure: super::helper::last_failure(),
             generation: 0,
             tx,
             rx,
