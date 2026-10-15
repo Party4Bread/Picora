@@ -76,16 +76,31 @@ fn frame(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::
     )
 }
 fn label(output: &egui::FullOutput, needle: &str) -> Option<egui::Pos2> {
-    fn find(shape: &egui::epaint::Shape, needle: &str) -> Option<egui::Pos2> {
+    fn find(shape: &egui::epaint::Shape, needle: &str, exact: bool) -> Option<egui::Pos2> {
         match shape {
-            egui::epaint::Shape::Text(t) if t.galley.text().contains(needle) => {
+            egui::epaint::Shape::Text(t)
+                if (if exact {
+                    t.galley.text() == needle
+                } else {
+                    t.galley.text().contains(needle)
+                }) =>
+            {
                 Some(t.pos + t.galley.size() * 0.5)
             }
-            egui::epaint::Shape::Vec(v) => v.iter().find_map(|s| find(s, needle)),
+            egui::epaint::Shape::Vec(v) => v.iter().find_map(|s| find(s, needle, exact)),
             _ => None,
         }
     }
-    output.shapes.iter().find_map(|s| find(&s.shape, needle))
+    output
+        .shapes
+        .iter()
+        .find_map(|s| find(&s.shape, needle, true))
+        .or_else(|| {
+            output
+                .shapes
+                .iter()
+                .find_map(|s| find(&s.shape, needle, false))
+        })
 }
 fn click(app: &mut App, ctx: &egui::Context, pos: egui::Pos2) {
     for pressed in [true, false] {
@@ -235,4 +250,132 @@ fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
         label(&output, "슬픈 고양이콘").is_some(),
         "selected pack title must remain visible"
     );
+}
+
+#[test]
+fn library_grid_does_not_change_picker_keyboard_selection() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let mut pack = crate::providers::dcinside::parse_detail(include_str!(
+        "../../tests/fixtures/dc-detail.json"
+    ))
+    .unwrap();
+    pack.stickers.truncate(1);
+    app.store.save_favorite_pack(&pack).unwrap();
+    app.refresh();
+    app.selected = 20;
+    frame(&mut app, &ctx, vec![]);
+    assert_eq!(
+        app.selected, 20,
+        "rendering library must not move picker selection"
+    );
+}
+
+#[test]
+fn late_pack_response_cannot_replace_the_last_clicked_pack() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let mut first = crate::providers::dcinside::parse_detail(include_str!(
+        "../../tests/fixtures/dc-detail.json"
+    ))
+    .unwrap();
+    first.title = "First pack".into();
+    let mut second = first.clone();
+    second.reference.id = "99".into();
+    second.title = "Second pack".into();
+    app.tab = Tab::Browse;
+    app.catalog = vec![first.clone(), second.clone()];
+    for name in ["First pack", "Second pack"] {
+        let output = frame(&mut app, &ctx, vec![]);
+        let pos = label(&output, name).unwrap();
+        click(&mut app, &ctx, pos);
+    }
+    app.services.bus.send(Event::Preview(2, Ok(second)));
+    app.handle_events(&ctx);
+    app.services.bus.send(Event::Preview(1, Ok(first)));
+    app.handle_events(&ctx);
+    assert_eq!(app.preview.as_ref().unwrap().title, "Second pack");
+}
+
+#[test]
+fn picker_enter_does_not_copy_a_sticker_while_a_popup_is_open() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let pack = crate::providers::dcinside::parse_detail(include_str!(
+        "../../tests/fixtures/dc-detail.json"
+    ))
+    .unwrap();
+    app.store.save_favorite_pack(&pack).unwrap();
+    app.refresh();
+    let _ = ctx.run(
+        egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Default::default(),
+            }],
+            ..Default::default()
+        },
+        |ctx| {
+            egui::Popup::open_id(ctx, egui::Id::new("collection-menu"));
+            egui::CentralPanel::default().show(ctx, |ui| app.grid(ui, app.items(), true));
+        },
+    );
+    assert!(
+        app.pending.is_none(),
+        "Enter in a popup must not start copying the grid selection"
+    );
+}
+
+#[test]
+fn library_manage_menu_can_unfavorite_and_remove_one_sticker() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let mut pack = crate::providers::dcinside::parse_detail(include_str!(
+        "../../tests/fixtures/dc-detail.json"
+    ))
+    .unwrap();
+    pack.stickers.truncate(2);
+    app.store.save_favorite_pack(&pack).unwrap();
+    app.refresh();
+    for action in ["Unfavorite sticker", "Remove sticker from library"] {
+        let output = frame(&mut app, &ctx, vec![]);
+        click(
+            &mut app,
+            &ctx,
+            label(&output, "Manage").expect("visible management action"),
+        );
+        let output = frame(&mut app, &ctx, vec![]);
+        click(
+            &mut app,
+            &ctx,
+            label(&output, action).expect("individual sticker action"),
+        );
+        assert_eq!(app.store.favorite_items().unwrap().len(), 1);
+    }
+    assert_eq!(app.packs[0].pack.stickers.len(), 1);
+    assert_eq!(app.packs[0].pack.stickers[0].id, "959928");
+    assert_eq!(app.store.favorite_items().unwrap().len(), 1);
 }

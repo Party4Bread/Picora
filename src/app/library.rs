@@ -111,7 +111,7 @@ impl App {
     }
     pub(super) fn library_content(&mut self, ui: &mut egui::Ui) {
         ui.heading("My library");
-        ui.label("Downloaded packs stay available when you’re offline.");
+        ui.label("Click a sticker to copy it. Use Manage to favorite, remove, or organize it.");
         ui.add_space(12.);
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_salt("saved-pack")
@@ -123,16 +123,35 @@ impl App {
                         .find(|p| p.pack.reference.key() == *k)
                         .map(|p| p.pack.title.as_str())
                         .unwrap_or("All stickers"),
-                    _ => "All stickers",
+                    Filter::Favorites => "Favorites",
+                    Filter::Recent => "Recent",
+                    Filter::Group(id) => self
+                        .groups
+                        .iter()
+                        .find(|g| g.id == *id)
+                        .map(|g| g.name.as_str())
+                        .unwrap_or("All stickers"),
+                    Filter::All => "All stickers",
                 })
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.filter, Filter::All, "All stickers");
+                    ui.selectable_value(&mut self.filter, Filter::Favorites, "Favorites");
+                    ui.selectable_value(&mut self.filter, Filter::Recent, "Recent");
+                    ui.separator();
+                    ui.label("Saved packs");
                     for p in &self.packs {
                         ui.selectable_value(
                             &mut self.filter,
                             Filter::Pack(p.pack.reference.key()),
                             &p.pack.title,
                         );
+                    }
+                    if !self.groups.is_empty() {
+                        ui.separator();
+                        ui.label("Custom groups");
+                        for g in &self.groups {
+                            ui.selectable_value(&mut self.filter, Filter::Group(g.id), &g.name);
+                        }
                     }
                 });
             ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search library"));
@@ -162,6 +181,9 @@ impl App {
                     self.refresh();
                 }
             });
+        }
+        if self.filter == Filter::Recent {
+            ui.label("Recently used first, then newly added stickers.");
         }
         self.grid(ui, self.items(), false);
     }
@@ -196,8 +218,7 @@ impl App {
             if self.query.trim().starts_with("https://") {
                 match PackRef::parse(&self.query) {
                     Ok(r) => {
-                        self.browsing = true;
-                        self.services.preview(r);
+                        self.preview_pack(r);
                     }
                     Err(e) => self.message(e.to_string(), true),
                 }
@@ -242,8 +263,7 @@ impl App {
                     let r = self.thumb(ui, pack.reference.provider, &pack.thumbnail, 84., false);
                     ui.vertical(|ui| {
                         if ui.link(RichText::new(&pack.title).strong()).clicked() || r.clicked() {
-                            self.browsing = true;
-                            self.services.preview(pack.reference.clone());
+                            self.preview_pack(pack.reference.clone());
                         }
                         ui.label(
                             RichText::new(format!("{} · {}", pack.reference.provider, pack.author))

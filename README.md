@@ -59,8 +59,10 @@ handling. Keep `vendor/eframe` with the source checkout; see
 1. Open **Discover**. Search DCInside, select a pack, and choose **Add pack to favorites**. You can also paste `https://dccon.dcinside.com/#41982` or an Arca `/e/<id>` URL into the search field.
 2. For Arca, use **Accounts → Sign in / reconnect**. Sign in on the actual website, then close that window to return its cookies to Picora. Windows saves cookies in `arca-session.dpapi`, encrypted for your Windows account; other platforms use the OS credential store. If saving fails, the session remains in memory and the error is shown. Arca's live authenticated integration still needs verification; see the compatibility record.
 3. Press **Ctrl+Shift+Space** to open the picker. Search pack/sticker titles, use arrows and Enter, or click a sticker. Picora copies the image, hides, and attempts the paste shortcut. It never presses Enter to send a message.
-4. Create custom groups in **Groups**. Right-click a downloaded sticker to add it, change its order, or remove it from a group.
+4. Use **Manage** below a library sticker (or right-click in the picker) to favorite/unfavorite it, remove it from the library, or add it to a custom group created in **Groups**. Individual favorite choices survive pack refreshes. Removing a sticker also removes its group membership and history; reimport its source pack to restore it.
 5. Hover over a sticker to preview animation. Normal selection pastes GIF and animated WebP as files; APNG gets an animated GIF copy for chat-attachment compatibility. **Paste original file** always preserves the source bytes, including APNG. **Copy still image** explicitly copies a PNG frame. GIF conversion may reduce colors and partial transparency; use the original when the destination supports APNG.
+
+**Recent** lists used stickers by last use, followed by unused stickers from newest imports. Reimporting an existing pack does not move its existing stickers to the front. Libraries created by older versions have no original import timestamps; their initial order is inferred from stored insertion order.
 
 Favorites are saved as soon as you add a pack, before media downloads finish.
 If you quit during a download, the favorite remains after restarting; uncached

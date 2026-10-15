@@ -302,10 +302,17 @@ impl App {
         self.library_open = true;
         self.target = None;
     }
+    fn preview_pack(&mut self, reference: PackRef) {
+        self.catalog_id += 1;
+        self.preview = None;
+        self.browsing = true;
+        self.services.preview(reference, self.catalog_id);
+    }
     fn browse(&mut self) {
         self.catalog_id += 1;
         self.browsing = true;
         self.catalog.clear();
+        self.preview = None;
         self.services
             .browse(self.source, self.query.clone(), self.page, self.catalog_id);
     }
@@ -313,11 +320,11 @@ impl App {
         let items = match &self.filter {
             Filter::Group(id) => self.store.group_items(*id).unwrap_or_default(),
             Filter::Recent => self.store.recents().unwrap_or_default(),
+            Filter::Favorites => self.store.favorite_items().unwrap_or_default(),
             filter => self
                 .packs
                 .iter()
                 .filter(|p| match filter {
-                    Filter::Favorites => p.favorite,
                     Filter::Pack(key) => p.pack.reference.key() == *key,
                     _ => true,
                 })

@@ -21,7 +21,24 @@ impl Store {
         CREATE TABLE IF NOT EXISTS group_items(group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE, pack TEXT, sticker TEXT, position INTEGER NOT NULL, PRIMARY KEY(group_id,pack,sticker), FOREIGN KEY(pack,sticker) REFERENCES stickers(pack,id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS recents(pack TEXT, sticker TEXT, used INTEGER NOT NULL, PRIMARY KEY(pack,sticker), FOREIGN KEY(pack,sticker) REFERENCES stickers(pack,id) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-        PRAGMA user_version=1;")?;
+")?;
+        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if version < 2 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(
+                "ALTER TABLE stickers ADD COLUMN added INTEGER NOT NULL DEFAULT 0;
+                UPDATE stickers SET added=rowid;
+                PRAGMA user_version=2;",
+            )?;
+            tx.commit()?;
+        }
+        if version < 3 {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute_batch(
+                "ALTER TABLE stickers ADD COLUMN favorite INTEGER; PRAGMA user_version=3;",
+            )?;
+            tx.commit()?;
+        }
         Ok(Self { conn })
     }
     pub fn save_pack(&self, pack: &Pack) -> Result<()> {
@@ -35,10 +52,14 @@ impl Store {
         let tx = self.conn.unchecked_transaction()?;
         let key = pack.reference.key();
         tx.execute("INSERT INTO packs(key,data,favorite) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET data=excluded.data,favorite=CASE WHEN ?3 THEN 1 ELSE packs.favorite END", params![key, serde_json::to_string(pack)?, favorite])?;
+        let added: i64 =
+            tx.query_row("SELECT COALESCE(MAX(added),0)+1 FROM stickers", [], |r| {
+                r.get(0)
+            })?;
         for s in &pack.stickers {
             tx.execute(
-                "INSERT OR IGNORE INTO stickers(pack,id) VALUES(?1,?2)",
-                params![key, s.id],
+                "INSERT OR IGNORE INTO stickers(pack,id,added) VALUES(?1,?2,?3)",
+                params![key, s.id, added],
             )?;
         }
         // Delete removed stickers after insertion, without replacing surviving rows or their memberships.
@@ -77,6 +98,50 @@ impl Store {
             "UPDATE packs SET favorite=?2 WHERE key=?1",
             params![key, value],
         )?;
+        Ok(())
+    }
+    pub fn sticker_favorite(&self, pack: &str, sticker: &str) -> Result<Option<bool>> {
+        Ok(self.conn.query_row("SELECT COALESCE(s.favorite,p.favorite) FROM stickers s JOIN packs p ON p.key=s.pack WHERE s.pack=?1 AND s.id=?2", params![pack,sticker], |r|r.get(0)).optional()?)
+    }
+    pub fn favorite_sticker(&self, pack: &str, sticker: &str, favorite: bool) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE stickers SET favorite=?3 WHERE pack=?1 AND id=?2",
+            params![pack, sticker, favorite],
+        )?;
+        ensure!(changed == 1, "Sticker is not in your library");
+        Ok(())
+    }
+    pub fn favorite_items(&self) -> Result<Vec<LibrarySticker>> {
+        let mut q = self.conn.prepare("SELECT s.pack,s.id FROM stickers s JOIN packs p ON p.key=s.pack WHERE COALESCE(s.favorite,p.favorite)=1 ORDER BY s.pack,s.rowid")?;
+        let rows = q
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        self.resolve_rows(rows)
+    }
+    pub fn remove_sticker(&self, key: &str, sticker: &str) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let data: String =
+            tx.query_row("SELECT data FROM packs WHERE key=?1", [key], |r| r.get(0))?;
+        let mut pack: Pack = serde_json::from_str(&data)?;
+        let before = pack.stickers.len();
+        pack.stickers.retain(|s| s.id != sticker);
+        ensure!(
+            pack.stickers.len() < before,
+            "Sticker is not in your library"
+        );
+        tx.execute(
+            "DELETE FROM stickers WHERE pack=?1 AND id=?2",
+            params![key, sticker],
+        )?;
+        if pack.stickers.is_empty() {
+            tx.execute("DELETE FROM packs WHERE key=?1", [key])?;
+        } else {
+            tx.execute(
+                "UPDATE packs SET data=?2 WHERE key=?1",
+                params![key, serde_json::to_string(&pack)?],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
     pub fn remove_pack(&self, key: &str) -> Result<()> {
@@ -141,21 +206,27 @@ impl Store {
         Ok(())
     }
     fn resolve_rows(&self, rows: Vec<(String, String)>) -> Result<Vec<LibrarySticker>> {
-        let packs = self.packs()?;
+        let mut stickers = std::collections::HashMap::new();
+        for saved in self.packs()? {
+            let key = saved.pack.reference.key();
+            for sticker in saved.pack.stickers {
+                stickers.insert(
+                    (key.clone(), sticker.id.clone()),
+                    LibrarySticker {
+                        pack_key: key.clone(),
+                        pack_title: saved.pack.title.clone(),
+                        provider: saved.pack.reference.provider,
+                        sticker,
+                    },
+                );
+            }
+        }
         Ok(rows
             .into_iter()
-            .filter_map(|(key, id)| {
-                let p = packs.iter().find(|p| p.pack.reference.key() == key)?;
-                let sticker = p.pack.stickers.iter().find(|s| s.id == id)?.clone();
-                Some(LibrarySticker {
-                    pack_key: key,
-                    pack_title: p.pack.title.clone(),
-                    provider: p.pack.reference.provider,
-                    sticker,
-                })
-            })
+            .filter_map(|key| stickers.remove(&key))
             .collect())
     }
+
     pub fn group_items(&self, group: i64) -> Result<Vec<LibrarySticker>> {
         let mut q = self.conn.prepare(
             "SELECT pack,sticker FROM group_items WHERE group_id=?1 ORDER BY position,pack,sticker",
@@ -167,13 +238,14 @@ impl Store {
     }
     pub fn record_recent(&self, pack: &str, sticker: &str) -> Result<()> {
         self.conn.execute("INSERT INTO recents(pack,sticker,used) VALUES(?1,?2,COALESCE((SELECT MAX(used)+1 FROM recents),1)) ON CONFLICT(pack,sticker) DO UPDATE SET used=excluded.used",params![pack,sticker])?;
-        self.conn.execute("DELETE FROM recents WHERE rowid NOT IN (SELECT rowid FROM recents ORDER BY used DESC LIMIT 100)",[])?;
+
         Ok(())
     }
     pub fn recents(&self) -> Result<Vec<LibrarySticker>> {
         let mut q = self
             .conn
-            .prepare("SELECT pack,sticker FROM recents ORDER BY used DESC LIMIT 100")?;
+            .prepare("SELECT s.pack,s.id FROM stickers s LEFT JOIN recents r ON r.pack=s.pack AND r.sticker=s.id
+                ORDER BY r.used DESC, s.added DESC, s.rowid ASC")?;
         let rows = q
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
