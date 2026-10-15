@@ -1,5 +1,6 @@
 use super::*;
 fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) -> App {
+    design::configure(ctx);
     let store = Store::open(&root.join("library.sqlite3")).unwrap();
     let settings = Settings::default();
     let (tx, rx) = mpsc::channel();
@@ -120,7 +121,7 @@ fn click(app: &mut App, ctx: &egui::Context, pos: egui::Pos2) {
     }
 }
 #[test]
-fn favorite_button_populates_library_dropdown_before_download_finishes() {
+fn favorite_button_populates_library_sidebar_before_download_finishes() {
     let root = tempfile::tempdir().unwrap();
     // No executor is running: downloading cannot complete before the assertion.
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -163,13 +164,10 @@ fn favorite_button_populates_library_dropdown_before_download_finishes() {
     app.preview = None;
     app.tab = Tab::Library;
     let output = frame(&mut app, &ctx, vec![]);
-    let dropdown = label(&output, "Previous favorite pack").expect("dropdown visible");
-    click(&mut app, &ctx, dropdown);
-    let output = frame(&mut app, &ctx, vec![]);
-    assert!(
-        label(&output, "New favorite pack").is_some(),
-        "new pack must appear in open dropdown immediately"
-    );
+    let entry =
+        label(&output, "New favorite pack").expect("new pack appears in sidebar immediately");
+    click(&mut app, &ctx, entry);
+    assert!(app.filter == Filter::Pack("arca:54950".into()));
 }
 
 #[test]
@@ -345,7 +343,7 @@ fn picker_enter_does_not_copy_a_sticker_while_a_popup_is_open() {
 }
 
 #[test]
-fn library_manage_menu_can_unfavorite_and_remove_one_sticker() {
+fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
     let root = tempfile::tempdir().unwrap();
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -362,10 +360,41 @@ fn library_manage_menu_can_unfavorite_and_remove_one_sticker() {
     app.refresh();
     for action in ["Unfavorite sticker", "Remove sticker from library"] {
         let output = frame(&mut app, &ctx, vec![]);
-        click(
-            &mut app,
-            &ctx,
-            label(&output, "Manage").expect("visible management action"),
+        assert!(
+            label(&output, "Manage").is_none(),
+            "no duplicated Manage button"
+        );
+        let pos = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::epaint::Shape::Rect(r)
+                    if (r.rect.width() - 80.).abs() < 0.1
+                        && (r.rect.height() - 80.).abs() < 0.1 =>
+                {
+                    Some(r.rect.center())
+                }
+                _ => None,
+            })
+            .expect("sticker tile");
+        for pressed in [true, false] {
+            frame(
+                &mut app,
+                &ctx,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Secondary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        assert!(
+            app.pending.is_none(),
+            "right-click must not copy the sticker"
         );
         let output = frame(&mut app, &ctx, vec![]);
         click(
@@ -378,4 +407,34 @@ fn library_manage_menu_can_unfavorite_and_remove_one_sticker() {
     assert_eq!(app.packs[0].pack.stickers.len(), 1);
     assert_eq!(app.packs[0].pack.stickers[0].id, "959928");
     assert_eq!(app.store.favorite_items().unwrap().len(), 1);
+}
+
+#[test]
+fn minimum_picker_keeps_custom_group_identity_visible() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let group = app.store.create_group("Work replies").unwrap();
+    app.refresh();
+    app.picker_filter = Filter::Group(group);
+    for _ in 0..3 {
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(340., 320.),
+                )),
+                ..Default::default()
+            },
+            |ctx| app.picker(ctx),
+        );
+        assert!(label(&output, "Work replies").is_some());
+        assert!(label(&output, "Library").is_some());
+        assert!(app.filter == Filter::All);
+        assert!(app.pending.is_none());
+    }
 }

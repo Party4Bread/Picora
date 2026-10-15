@@ -1,3 +1,4 @@
+mod design;
 mod events;
 mod grid;
 mod library;
@@ -121,10 +122,7 @@ impl App {
             .or_default()
             .insert(0, "noto-kr".into());
         ctx.set_fonts(fonts);
-        let mut style = (*ctx.style()).clone();
-        style.spacing.item_spacing = Vec2::new(8., 8.);
-        style.spacing.button_padding = Vec2::new(10., 7.);
-        ctx.set_style(style);
+        design::configure(ctx);
         let store = Store::open(&root.join("library.sqlite3"))?;
         let settings = store.settings()?;
         apply_theme(ctx, &settings.theme);
@@ -316,6 +314,25 @@ impl App {
         self.services
             .browse(self.source, self.query.clone(), self.page, self.catalog_id);
     }
+    fn collection_title(&self) -> String {
+        match &self.filter {
+            Filter::All => "All stickers".into(),
+            Filter::Favorites => "Favorites".into(),
+            Filter::Recent => "Recent".into(),
+            Filter::Pack(key) => self
+                .packs
+                .iter()
+                .find(|p| p.pack.reference.key() == *key)
+                .map(|p| p.pack.title.clone())
+                .unwrap_or_else(|| "All stickers".into()),
+            Filter::Group(id) => self
+                .groups
+                .iter()
+                .find(|g| g.id == *id)
+                .map(|g| g.name.clone())
+                .unwrap_or_else(|| "All stickers".into()),
+        }
+    }
     fn items(&self) -> Vec<LibrarySticker> {
         let items = match &self.filter {
             Filter::Group(id) => self.store.group_items(*id).unwrap_or_default(),
@@ -375,7 +392,6 @@ impl App {
         }
     }
     fn footer(&self, ui: &mut egui::Ui) {
-        ui.separator();
         ui.horizontal_wrapped(|ui| {
             if self.pending.is_some() || self.installing || self.browsing || self.login_busy {
                 ui.spinner();
@@ -390,93 +406,157 @@ impl App {
     fn picker(&mut self, ctx: &egui::Context) {
         std::mem::swap(&mut self.filter, &mut self.picker_filter);
         std::mem::swap(&mut self.search, &mut self.picker_search);
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.heading("Picora");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Library").clicked() {
-                        self.open_library();
-                    }
-                });
-            });
-            let search = ui.add(
-                egui::TextEdit::singleline(&mut self.search)
-                    .hint_text("Find a sticker or pack…")
-                    .desired_width(f32::INFINITY),
-            );
-            if self.focus_search {
-                search.request_focus();
-                self.focus_search = false;
-            }
-            if ui
-                .input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp))
-            {
-                search.surrender_focus();
-            }
-            ui.horizontal_wrapped(|ui| {
-                for (label, filter) in [
-                    ("Favorites", Filter::Favorites),
-                    ("Recent", Filter::Recent),
-                    ("All", Filter::All),
-                ] {
-                    if ui
-                        .selectable_value(&mut self.filter, filter, label)
-                        .changed()
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(12.),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    let title = if ctx.content_rect().height() < 400.
+                        && matches!(self.filter, Filter::Pack(_) | Filter::Group(_))
                     {
-                        self.selected = 0;
-                    }
-                }
-                egui::ComboBox::from_id_salt("collections")
-                    .selected_text(match &self.filter {
-                        Filter::Group(id) => self
-                            .groups
-                            .iter()
-                            .find(|g| g.id == *id)
-                            .map(|g| g.name.as_str())
-                            .unwrap_or("Packs & groups"),
-                        Filter::Pack(key) => self
-                            .packs
-                            .iter()
-                            .find(|p| p.pack.reference.key() == *key)
-                            .map(|p| p.pack.title.as_str())
-                            .unwrap_or("Packs & groups"),
-                        _ => "Packs & groups",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.label("Saved packs");
-                        for p in &self.packs {
-                            if ui
-                                .selectable_value(
-                                    &mut self.filter,
-                                    Filter::Pack(p.pack.reference.key()),
-                                    &p.pack.title,
-                                )
-                                .changed()
-                            {
-                                self.selected = 0;
-                            }
+                        self.collection_title()
+                    } else {
+                        "Picora".to_owned()
+                    };
+                    ui.add_sized(
+                        [(ui.available_width() - 84.).max(40.), 26.],
+                        egui::Label::new(RichText::new(&title).size(18.).strong()).truncate(),
+                    )
+                    .on_hover_text(&title);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(egui::Button::new("Library").frame_when_inactive(false))
+                            .clicked()
+                        {
+                            self.open_library();
                         }
-                        if !self.groups.is_empty() {
-                            ui.separator();
-                            ui.label("Custom groups");
-                            for g in &self.groups {
+                    });
+                });
+                let search = ui.add_sized(
+                    [ui.available_width(), 36.],
+                    egui::TextEdit::singleline(&mut self.search)
+                        .hint_text("Search stickers…")
+                        .margin(egui::vec2(12., 8.))
+                        .desired_width(f32::INFINITY),
+                );
+                if self.focus_search {
+                    search.request_focus();
+                    self.focus_search = false;
+                }
+                if ui.input(|i| {
+                    i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp)
+                }) {
+                    search.surrender_focus();
+                }
+                ui.horizontal_wrapped(|ui| {
+                    for (label, filter) in [
+                        ("Favorites", Filter::Favorites),
+                        ("Recent", Filter::Recent),
+                        ("All", Filter::All),
+                    ] {
+                        if ui
+                            .selectable_value(&mut self.filter, filter, label)
+                            .changed()
+                        {
+                            self.selected = 0;
+                        }
+                    }
+                    let collection_label = if ui.max_rect().width() < 380. {
+                        "More"
+                    } else {
+                        "Packs & groups"
+                    };
+                    egui::ComboBox::from_id_salt("collections")
+                        .width(if ui.max_rect().width() < 380. {
+                            68.
+                        } else {
+                            140.
+                        })
+                        .selected_text(collection_label)
+                        .show_ui(ui, |ui| {
+                            ui.label("Saved packs");
+                            for p in &self.packs {
                                 if ui
                                     .selectable_value(
                                         &mut self.filter,
-                                        Filter::Group(g.id),
-                                        &g.name,
+                                        Filter::Pack(p.pack.reference.key()),
+                                        &p.pack.title,
                                     )
                                     .changed()
                                 {
                                     self.selected = 0;
                                 }
                             }
-                        }
+                            if !self.groups.is_empty() {
+                                ui.separator();
+                                ui.label("Custom groups");
+                                for g in &self.groups {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.filter,
+                                            Filter::Group(g.id),
+                                            &g.name,
+                                        )
+                                        .changed()
+                                    {
+                                        self.selected = 0;
+                                    }
+                                }
+                            }
+                        });
+                });
+                egui::TopBottomPanel::bottom("picker-status").show_inside(ui, |ui| self.footer(ui));
+                if !self.packs.is_empty() {
+                    egui::TopBottomPanel::bottom("picker-packs")
+                        .exact_height(48.)
+                        .show_separator_line(false)
+                        .show_inside(ui, |ui| {
+                            egui::ScrollArea::horizontal()
+                                .id_salt("pack-shortcuts")
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        for p in self.packs.clone() {
+                                            ui.push_id(p.pack.reference.key(), |ui| {
+                                                let filter = Filter::Pack(p.pack.reference.key());
+                                                if self
+                                                    .thumb(
+                                                        ui,
+                                                        p.pack.reference.provider,
+                                                        &p.pack.thumbnail,
+                                                        38.,
+                                                        self.filter == filter,
+                                                    )
+                                                    .on_hover_text(&p.pack.title)
+                                                    .clicked()
+                                                {
+                                                    self.filter = filter;
+                                                    self.selected = 0;
+                                                }
+                                            });
+                                        }
+                                    });
+                                });
+                        });
+                }
+                ui.add_space(4.);
+                let items = self.items();
+                if ctx.content_rect().height() >= 400. {
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(self.collection_title()).small().strong(),
+                            )
+                            .truncate(),
+                        );
+                        ui.label(RichText::new(items.len().to_string()).small().weak());
                     });
+                    ui.add_space(4.);
+                }
+                self.grid(ui, items, true);
             });
-            egui::TopBottomPanel::bottom("picker-status").show_inside(ui, |ui| self.footer(ui));
-            self.grid(ui, self.items(), true);
-        });
         std::mem::swap(&mut self.filter, &mut self.picker_filter);
         std::mem::swap(&mut self.search, &mut self.picker_search);
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
