@@ -11,8 +11,22 @@ impl App {
         let response = ui.add(
             egui::Button::new("")
                 .min_size(Vec2::splat(size))
-                .selected(selected),
+                .frame(false),
         );
+        let fill = if selected {
+            ui.visuals().selection.bg_fill
+        } else if response.hovered() {
+            ui.visuals().widgets.hovered.weak_bg_fill
+        } else {
+            Color32::TRANSPARENT
+        };
+        let stroke = if selected || response.has_focus() {
+            ui.visuals().selection.stroke
+        } else {
+            egui::Stroke::NONE
+        };
+        ui.painter()
+            .rect(response.rect, 8., fill, stroke, egui::StrokeKind::Inside);
         if let Some(v) = self.visuals.get(url) {
             let frame = if response.hovered() && v.frames.len() > 1 {
                 ui.ctx().request_repaint_after(Duration::from_millis(35));

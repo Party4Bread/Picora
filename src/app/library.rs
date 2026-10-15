@@ -3,34 +3,97 @@ impl App {
     pub(super) fn library(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("library-nav")
             .resizable(false)
-            .default_width(164.)
+            .exact_width(200.)
+            .frame(
+                egui::Frame::new()
+                    .fill(ctx.style().visuals.faint_bg_color)
+                    .inner_margin(12.),
+            )
             .show(ctx, |ui| {
-                ui.add_space(10.);
-                ui.heading("Picora");
-                ui.label(RichText::new("A home for your reactions").small().weak());
-                ui.add_space(24.);
+                ui.spacing_mut().item_spacing.y = 4.;
+                ui.add_space(4.);
+                ui.label(RichText::new("Picora").size(23.).strong());
+                ui.add_space(8.);
                 for (label, tab) in [
                     ("My library", Tab::Library),
                     ("Discover", Tab::Browse),
                     ("Groups", Tab::Groups),
-                    ("Accounts", Tab::Accounts),
-                    ("Settings", Tab::Settings),
                 ] {
-                    if ui
-                        .add_sized(
-                            [144., 34.],
-                            egui::Button::new(label).selected(self.tab == tab),
-                        )
-                        .clicked()
-                    {
+                    let selected =
+                        self.tab == tab && (tab != Tab::Library || self.filter == Filter::All);
+                    if design::nav_row(ui, label, selected, None).clicked() {
                         self.tab = tab;
+                        if tab == Tab::Library {
+                            self.filter = Filter::All;
+                        }
                         if tab == Tab::Browse && self.catalog.is_empty() {
                             self.browse();
                         }
                     }
                 }
+                ui.add_space(8.);
+                ui.separator();
+                let height = (ui.available_height() - 128.).max(40.);
+                egui::ScrollArea::vertical()
+                    .id_salt("library-collections")
+                    .max_height(height)
+                    .show(ui, |ui| {
+                        for (label, filter) in
+                            [("Favorites", Filter::Favorites), ("Recent", Filter::Recent)]
+                        {
+                            if design::nav_row(
+                                ui,
+                                label,
+                                self.tab == Tab::Library && self.filter == filter,
+                                None,
+                            )
+                            .clicked()
+                            {
+                                self.tab = Tab::Library;
+                                self.filter = filter;
+                            }
+                        }
+                        ui.add_space(8.);
+                        ui.label(RichText::new("Saved packs").small().weak());
+                        if self.packs.is_empty() {
+                            ui.label(RichText::new("No packs yet").small().weak());
+                        }
+                        for p in &self.packs {
+                            let filter = Filter::Pack(p.pack.reference.key());
+                            if design::nav_row(
+                                ui,
+                                &p.pack.title,
+                                self.tab == Tab::Library && self.filter == filter,
+                                Some(p.pack.stickers.len()),
+                            )
+                            .clicked()
+                            {
+                                self.tab = Tab::Library;
+                                self.filter = filter;
+                            }
+                        }
+                        if !self.groups.is_empty() {
+                            ui.add_space(8.);
+                            ui.label(RichText::new("Custom groups").small().weak());
+                            for g in &self.groups {
+                                let filter = Filter::Group(g.id);
+                                if design::nav_row(
+                                    ui,
+                                    &g.name,
+                                    self.tab == Tab::Library && self.filter == filter,
+                                    None,
+                                )
+                                .clicked()
+                                {
+                                    self.tab = Tab::Library;
+                                    self.filter = filter;
+                                }
+                            }
+                        }
+                    });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    if ui.button("Open picker").clicked() {
+                    ui.label(RichText::new(&self.settings.shortcut).small().weak());
+                    if design::nav_row(ui, "Open picker", false, None).clicked() {
                         self.target = None;
                         self.picker_open = true;
                         self.focus_search = true;
@@ -43,21 +106,31 @@ impl App {
                             egui::ViewportCommand::Focus,
                         );
                     }
-                    ui.label(RichText::new(&self.settings.shortcut).small().weak());
+                    for (label, tab) in [("Settings", Tab::Settings), ("Accounts", Tab::Accounts)] {
+                        if design::nav_row(ui, label, self.tab == tab, None).clicked() {
+                            self.tab = tab;
+                        }
+                    }
                 });
             });
         egui::TopBottomPanel::bottom("library-status").show(ctx, |ui| self.footer(ui));
-        egui::CentralPanel::default().show(ctx, |ui| match self.tab {
-            Tab::Library => self.library_content(ui),
-            Tab::Browse => self.discover(ui),
-            Tab::Groups => self.groups_ui(ui),
-            Tab::Accounts => self.accounts(ui),
-            Tab::Settings => {
-                egui::ScrollArea::vertical()
-                    .id_salt("settings-scroll")
-                    .show(ui, |ui| self.settings_ui(ui));
-            }
-        });
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(24.),
+            )
+            .show(ctx, |ui| match self.tab {
+                Tab::Library => self.library_content(ui),
+                Tab::Browse => self.discover(ui),
+                Tab::Groups => self.groups_ui(ui),
+                Tab::Accounts => self.accounts(ui),
+                Tab::Settings => {
+                    egui::ScrollArea::vertical()
+                        .id_salt("settings-scroll")
+                        .show(ui, |ui| self.settings_ui(ui));
+                }
+            });
         if let Some(pack) = self.preview.clone() {
             let mut open = true;
             egui::Window::new(&pack.title)
@@ -110,52 +183,22 @@ impl App {
         }
     }
     pub(super) fn library_content(&mut self, ui: &mut egui::Ui) {
-        ui.heading("My library");
-        ui.label("Click a sticker to copy it. Right-click to favorite, remove, or organize it.");
+        let title = self.collection_title();
+        let items = self.items();
+        ui.heading(&title);
+        ui.label(
+            RichText::new(format!("{} stickers", items.len()))
+                .small()
+                .weak(),
+        );
         ui.add_space(12.);
-        ui.horizontal(|ui| {
-            egui::ComboBox::from_id_salt("saved-pack")
-                .width(280.)
-                .selected_text(match &self.filter {
-                    Filter::Pack(k) => self
-                        .packs
-                        .iter()
-                        .find(|p| p.pack.reference.key() == *k)
-                        .map(|p| p.pack.title.as_str())
-                        .unwrap_or("All stickers"),
-                    Filter::Favorites => "Favorites",
-                    Filter::Recent => "Recent",
-                    Filter::Group(id) => self
-                        .groups
-                        .iter()
-                        .find(|g| g.id == *id)
-                        .map(|g| g.name.as_str())
-                        .unwrap_or("All stickers"),
-                    Filter::All => "All stickers",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.filter, Filter::All, "All stickers");
-                    ui.selectable_value(&mut self.filter, Filter::Favorites, "Favorites");
-                    ui.selectable_value(&mut self.filter, Filter::Recent, "Recent");
-                    ui.separator();
-                    ui.label("Saved packs");
-                    for p in &self.packs {
-                        ui.selectable_value(
-                            &mut self.filter,
-                            Filter::Pack(p.pack.reference.key()),
-                            &p.pack.title,
-                        );
-                    }
-                    if !self.groups.is_empty() {
-                        ui.separator();
-                        ui.label("Custom groups");
-                        for g in &self.groups {
-                            ui.selectable_value(&mut self.filter, Filter::Group(g.id), &g.name);
-                        }
-                    }
-                });
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Search library"));
-        });
+        ui.add_sized(
+            [ui.available_width(), 36.],
+            egui::TextEdit::singleline(&mut self.search)
+                .hint_text("Search stickers…")
+                .margin(egui::vec2(12., 8.)),
+        );
+        ui.add_space(8.);
         if let Filter::Pack(key) = self.filter.clone()
             && let Some(p) = self
                 .packs
@@ -163,7 +206,7 @@ impl App {
                 .find(|p| p.pack.reference.key() == key)
                 .cloned()
         {
-            ui.horizontal(|ui| {
+            ui.menu_button("Pack options", |ui| {
                 let mut favorite = p.favorite;
                 if ui.checkbox(&mut favorite, "Favorite pack").changed() {
                     let r = self.store.favorite(&key, favorite);
@@ -185,6 +228,12 @@ impl App {
         if self.filter == Filter::Recent {
             ui.label("Recently used first, then newly added stickers.");
         }
+        ui.label(
+            RichText::new("Click to copy · Right-click for actions")
+                .small()
+                .weak(),
+        );
+        ui.add_space(8.);
         self.grid(ui, self.items(), false);
     }
     pub(super) fn discover(&mut self, ui: &mut egui::Ui) {
