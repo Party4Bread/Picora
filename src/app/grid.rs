@@ -128,15 +128,7 @@ impl App {
                 (self.selected / columns) as f32 * (80. + ui.spacing().item_spacing.y),
             );
         }
-        let row_height = if picker {
-            80.
-        } else {
-            let button_height = (ui.text_style_height(&egui::TextStyle::Button)
-                + 2. * ui.spacing().button_padding.y)
-                .max(ui.spacing().interact_size.y);
-            80. + ui.spacing().item_spacing.y + button_height
-        };
-        scroll.show_rows(ui, row_height, items.len().div_ceil(columns), |ui, rows| {
+        scroll.show_rows(ui, 80., items.len().div_ceil(columns), |ui, rows| {
             for row in rows {
                 ui.horizontal(|ui| {
                     for column in 0..columns {
@@ -163,11 +155,6 @@ impl App {
                                     self.choose(item.clone(), CopyMode::Auto, picker);
                                 }
                                 r.context_menu(|ui| self.sticker_menu(ui, item, picker));
-                                if !picker {
-                                    ui.menu_button("Manage", |ui| {
-                                        self.sticker_menu(ui, item, false)
-                                    });
-                                }
                             });
                         });
                     }

@@ -111,7 +111,7 @@ impl App {
     }
     pub(super) fn library_content(&mut self, ui: &mut egui::Ui) {
         ui.heading("My library");
-        ui.label("Click a sticker to copy it. Use Manage to favorite, remove, or organize it.");
+        ui.label("Click a sticker to copy it. Right-click to favorite, remove, or organize it.");
         ui.add_space(12.);
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_salt("saved-pack")

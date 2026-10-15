@@ -345,7 +345,7 @@ fn picker_enter_does_not_copy_a_sticker_while_a_popup_is_open() {
 }
 
 #[test]
-fn library_manage_menu_can_unfavorite_and_remove_one_sticker() {
+fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
     let root = tempfile::tempdir().unwrap();
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -362,10 +362,41 @@ fn library_manage_menu_can_unfavorite_and_remove_one_sticker() {
     app.refresh();
     for action in ["Unfavorite sticker", "Remove sticker from library"] {
         let output = frame(&mut app, &ctx, vec![]);
-        click(
-            &mut app,
-            &ctx,
-            label(&output, "Manage").expect("visible management action"),
+        assert!(
+            label(&output, "Manage").is_none(),
+            "no duplicated Manage button"
+        );
+        let pos = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::epaint::Shape::Rect(r)
+                    if (r.rect.width() - 80.).abs() < 0.1
+                        && (r.rect.height() - 80.).abs() < 0.1 =>
+                {
+                    Some(r.rect.center())
+                }
+                _ => None,
+            })
+            .expect("sticker tile");
+        for pressed in [true, false] {
+            frame(
+                &mut app,
+                &ctx,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Secondary,
+                        pressed,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+        }
+        assert!(
+            app.pending.is_none(),
+            "right-click must not copy the sticker"
         );
         let output = frame(&mut app, &ctx, vec![]);
         click(
