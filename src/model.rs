@@ -115,6 +115,7 @@ pub struct Group {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    pub check_updates_automatically: bool,
     pub shortcut: String,
     pub auto_paste: bool,
     pub launch_at_login: bool,
@@ -123,6 +124,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            check_updates_automatically: true,
             shortcut: "Ctrl+Shift+Space".into(),
             auto_paste: true,
             launch_at_login: false,

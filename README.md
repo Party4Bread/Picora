@@ -112,3 +112,7 @@ python scripts/package.py
 Produces unsigned archives in `dist/`: Windows executable, macOS `.app`, or Linux binary plus desktop entry/icon. CI builds and tests on all three OS runners and uploads archives; it does not publish releases or sign/notarize applications. Linux archives require the system libraries above. Install the Linux desktop entry to `~/.local/share/applications/` and icon to `~/.local/share/icons/hicolor/scalable/apps/`, with the binary on PATH.
 
 Noto Sans KR is bundled under the [SIL Open Font License](assets/OFL.txt), sourced from [Google Fonts](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/KR). Stickers are downloaded from their original repositories at the user's request; no sticker artwork is bundled.
+
+## Self-updates
+
+Settings → Updates checks GitHub Releases and offers **Update and restart**. Updates replace app files directly on all platforms, including Windows, while preserving your library and settings. See [update and recovery details](docs/UPDATES.md). An existing installation needs one manual upgrade to acquire this updater.

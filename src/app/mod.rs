@@ -1,6 +1,7 @@
 mod events;
 mod grid;
 mod library;
+mod updates;
 use crate::{
     media::CopyMode,
     model::*,
@@ -51,6 +52,8 @@ struct PendingPaste {
     from_picker: bool,
 }
 pub struct App {
+    updates: crate::update::controller::Controller,
+    update_health_sent: bool,
     store: Store,
     services: Services,
     rx: mpsc::Receiver<Event>,
@@ -136,6 +139,8 @@ impl App {
             bus,
         )?;
         let mut app = Self {
+            updates: Default::default(),
+            update_health_sent: false,
             packs: store.packs()?,
             groups: store.groups()?,
             store,
@@ -184,6 +189,9 @@ impl App {
         if app.packs.is_empty() && !background {
             app.library_open = true;
             app.picker_open = false;
+        }
+        if app.settings.check_updates_automatically {
+            app.updates.check(&app.services.runtime, ctx);
         }
         app.register_shortcut();
         match make_tray() {
@@ -437,6 +445,23 @@ impl eframe::App for App {
         #[cfg(target_os = "linux")]
         while gtk::events_pending() {
             gtk::main_iteration_do(false);
+        }
+        if !self.update_health_sent {
+            self.update_health_sent = true;
+            let bus = self.services.bus.clone();
+            self.services.runtime.spawn_blocking(move || {
+                if let Err(e) = crate::update::helper::acknowledge_health() {
+                    bus.send(Event::UpdateHealthFailed(format!(
+                        "Update startup acknowledgement failed: {e:#}"
+                    )));
+                }
+            });
+        }
+        if self.updates.poll(&self.services.runtime, ctx) {
+            self.services.cancel_paste();
+            self.paste_at = None;
+            self.pending = None;
+            self.quit = true;
         }
         self.handle_events(ctx);
         if self.quit {

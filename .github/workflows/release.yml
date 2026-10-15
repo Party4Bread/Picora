@@ -1,0 +1,52 @@
+name: Publish release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate reviewed release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git merge-base --is-ancestor HEAD "origin/$DEFAULT_BRANCH"
+          python3 - <<'PY'
+          import os, re, tomllib
+          version = tomllib.loads(open('Cargo.toml').read())['package']['version']
+          assert re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version)
+          assert os.environ['RELEASE_TAG'] == 'v' + version
+          PY
+  build:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: picora-*
+          path: dist
+          merge-multiple: true
+      - name: Generate and publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 scripts/update_manifest.py --tag "$RELEASE_TAG"
+          gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes dist/*
+          gh release edit "$RELEASE_TAG" --draft=false --latest

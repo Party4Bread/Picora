@@ -31,6 +31,7 @@ impl App {
         }
         while let Ok(event) = self.rx.try_recv() {
             match event {
+                Event::UpdateHealthFailed(error) => { self.message(error, true); self.quit = true; },
                 Event::Show => self.show_picker(ctx),
                 Event::Progress(s) => self.message(s, false),
                 Event::Catalog(id, result) => {

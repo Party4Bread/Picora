@@ -5,6 +5,12 @@ edition = "2024"
 description = "A cross-platform sticker picker for DCInside and Arca"
 
 [dependencies]
+semver = "1"
+rand = "0.9"
+libc = "0.2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+flate2 = "1"
+tar = "0.4"
 anyhow = "1"
 async-trait = "0.1"
 futures-util = "0.3"
@@ -40,7 +46,7 @@ gtk = "0.18"
 x11rb = { version = "0.13", features = ["xtest"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading", "Win32_Storage_FileSystem"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -60,3 +66,8 @@ strip = true
 # fix locally until the app migrates to the newer egui App/UI API.
 [patch.crates-io]
 eframe = { path = "vendor/eframe" }
+
+[[example]]
+name = "update_test_child"
+test = true
+harness = false

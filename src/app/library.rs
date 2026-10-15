@@ -335,6 +335,7 @@ impl App {
         });
     }
     pub(super) fn settings_ui(&mut self, ui: &mut egui::Ui) {
+        self.updates_ui(ui);
         ui.heading("Settings");
         ui.add_space(16.);
         ui.strong("Global shortcut");

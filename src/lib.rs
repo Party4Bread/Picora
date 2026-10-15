@@ -7,3 +7,4 @@ pub mod platform;
 pub mod providers;
 pub mod services;
 pub mod store;
+pub mod update;
