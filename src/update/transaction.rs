@@ -66,6 +66,23 @@ impl InstallLayout {
             .context("Invalid installation parent")?
             .join(format!(".{name}.picora-update")))
     }
+    pub fn check_writable(&self) -> Result<()> {
+        let directory = if self.target == Target::MacosAarch64 {
+            self.root.parent().context("Invalid bundle parent")?
+        } else {
+            &self.root
+        };
+        reject_symlink(directory)?;
+        tempfile::NamedTempFile::new_in(directory).context(
+            "Installation is not writable; move Picora to a writable directory before updating",
+        )?;
+        #[cfg(windows)]
+        ensure!(
+            !fs::metadata(self.executable())?.permissions().readonly(),
+            "Picora executable is read-only"
+        );
+        Ok(())
+    }
     pub fn startup_gate(&self) -> Result<File> {
         let state = self.state_dir()?;
         reject_symlink(&state)?;

@@ -138,3 +138,20 @@ fn old_inventory_removes_only_obsolete_owned_files() {
     assert!(!root.join("obsolete.txt").exists());
     assert_eq!(fs::read(root.join("unrelated.txt")).unwrap(), b"keep");
 }
+#[cfg(unix)]
+#[test]
+fn read_only_installation_is_rejected_before_handoff() {
+    use std::os::unix::fs::PermissionsExt;
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().join("app");
+    fs::create_dir(&root).unwrap();
+    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o555)).unwrap();
+    let result = layout.check_writable();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err());
+    assert!(!layout.state_dir().unwrap().join("journal.json").exists());
+}

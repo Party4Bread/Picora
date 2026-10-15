@@ -20,6 +20,9 @@ fn main() {
 }
 fn run() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
+    if args.get(1).is_some_and(|x| x == "--test-recovery") {
+        return interrupted_recovery();
+    }
     if args.get(1).is_some_and(|x| x == "--update-helper") {
         return helper::run_helper(Path::new(&args[2]));
     }

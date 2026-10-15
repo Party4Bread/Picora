@@ -117,6 +117,7 @@ fn launch_job(
     staged: Option<StagedUpdate>,
     directory: &Path,
 ) -> Result<ReadyHelper> {
+    layout.check_writable()?;
     let listener = listener()?;
     let token = nonce();
     let helper = directory.join(if cfg!(windows) {
@@ -228,6 +229,7 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
             == job.layout.root,
         "Invalid installation location"
     );
+    job.layout.check_writable()?;
     let _gate = job.layout.startup_gate()?;
     #[cfg(windows)]
     let _installer_guard = crate::platform::instance::InstallerGuard::new()?;
