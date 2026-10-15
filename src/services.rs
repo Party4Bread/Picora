@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use tokio::sync::Semaphore;
 
 pub enum Event {
+    UpdateHealthFailed(String),
     Catalog(u64, Result<Vec<Pack>>),
     Preview(Result<Pack>),
     Installed(Result<Pack>),

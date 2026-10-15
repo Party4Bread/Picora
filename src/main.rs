@@ -13,6 +13,10 @@ fn starts_hidden(args: &[String]) -> bool {
 
 fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--update-helper") {
+        anyhow::ensure!(args.len() == 2, "Invalid updater arguments");
+        return picora::update::helper::run_helper(std::path::Path::new(&args[1]));
+    }
     if args.iter().any(|a| a == "--auth-helper") {
         return picora::auth::helper();
     }
@@ -27,6 +31,10 @@ fn run() -> Result<()> {
             .all(|a| ["--show", "--library", "--background"].contains(&a.as_str())),
         "Unknown argument; use --help"
     );
+    let startup = picora::update::helper::startup_recovery()?;
+    if startup.restarting {
+        return Ok(());
+    }
     let root = if let Some(p) = std::env::var_os("PICORA_DATA_DIR") {
         std::path::PathBuf::from(p)
     } else {
@@ -43,6 +51,7 @@ fn run() -> Result<()> {
     else {
         return Ok(());
     };
+    drop(startup);
     #[cfg(target_os = "linux")]
     anyhow::ensure!(
         std::env::var_os("DISPLAY").is_some(),

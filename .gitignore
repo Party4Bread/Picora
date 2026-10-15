@@ -2,3 +2,5 @@
 /dist
 /.impeccable
 *.sqlite3*
+
+__pycache__/

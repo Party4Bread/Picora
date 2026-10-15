@@ -52,7 +52,11 @@ impl App {
             Tab::Browse => self.discover(ui),
             Tab::Groups => self.groups_ui(ui),
             Tab::Accounts => self.accounts(ui),
-            Tab::Settings => self.settings_ui(ui),
+            Tab::Settings => {
+                egui::ScrollArea::vertical()
+                    .id_salt("settings-scroll")
+                    .show(ui, |ui| self.settings_ui(ui));
+            }
         });
         if let Some(pack) = self.preview.clone() {
             let mut open = true;
@@ -336,6 +340,7 @@ impl App {
     }
     pub(super) fn settings_ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Settings");
+        self.updates_ui(ui);
         ui.add_space(16.);
         ui.strong("Global shortcut");
         ui.horizontal(|ui| {

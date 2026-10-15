@@ -15,6 +15,10 @@ Status is evidence-based; a compiling adapter is not a verified desktop integrat
 | macOS native integration | Local cross-check blocked by absent Apple SDK; native CI/OS runs not yet observed |
 | Discord and Telegram image/file paste | Manual target-app verification required on each OS |
 
+## Self-updater verification (2026-10-15)
+
+Local Linux tests cover release validation, archive boundaries, transactional replacement, rollback, and external recovery. A real Linux GUI helper smoke verified replacement, restart acknowledgement and successful cleanup. Linux and Windows cross-target Clippy passed. Native Windows/macOS helper tests run in CI; a full desktop update smoke on those systems remains separate. No live release was published for this feature; the GitHub "no newer release" path was exercised.
+
 ## Manual acceptance procedure
 
 For each supported desktop (Windows, macOS, X11, GNOME Wayland, KDE Wayland):
@@ -35,4 +39,4 @@ For each supported desktop (Windows, macOS, X11, GNOME Wayland, KDE Wayland):
 - Wayland input permission is session-scoped and must be re-enabled after restarting Picora. Older desktops may not expose the required portals.
 - File-paste acceptance and animated preservation belong to the destination app. Picora does not claim successful insertion based only on key injection.
 - Animation preview is bounded to 120 frames / 64 MiB decoded memory per asset. Originals are retained intact.
-- No signing, notarization, auto-update service, cloud sync, or automatic cache eviction of original attachments is included.
+- GitHub self-updates use direct file replacement; see [updates](UPDATES.md). No signing, notarization, cloud sync, or automatic cache eviction of original attachments is included.

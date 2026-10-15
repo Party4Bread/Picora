@@ -20,10 +20,10 @@ pub struct Instance {
 // Inno Setup checks this named mutex before installation and uninstallation.
 // Holding a handle is sufficient: this does not replace the per-data-dir lock.
 #[cfg(target_os = "windows")]
-struct InstallerGuard(windows_sys::Win32::Foundation::HANDLE);
+pub(crate) struct InstallerGuard(windows_sys::Win32::Foundation::HANDLE);
 #[cfg(target_os = "windows")]
 impl InstallerGuard {
-    fn new() -> Result<Self> {
+    pub(crate) fn new() -> Result<Self> {
         let name: Vec<u16> = "Local\\Picora.Desktop"
             .encode_utf16()
             .chain(Some(0))
