@@ -43,7 +43,7 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
         if reference.provider != Provider::Arca || !found.insert(reference.key()) {
             continue;
         }
-        let image = node.select(&Selector::parse("img").unwrap()).next();
+        let image = node.select(&Selector::parse("img, video").unwrap()).next();
         let title = node
             .select(&Selector::parse(".title, .name, .emoticon-title").unwrap())
             .next()
@@ -94,19 +94,48 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
     let doc = Html::parse_document(html);
     let reference = PackRef::parse(&format!("https://arca.live/e/{id}"))?;
     let title = doc
-        .select(&Selector::parse(".emoticon-title, .emoticon-name, h1, h2").unwrap())
+        .select(&Selector::parse("article .emoticon-header .emoticon-info .title").unwrap())
         .next()
         .map(|n| n.text().collect::<String>())
         .filter(|t| !t.trim().is_empty())
-        .context("Arca pack title missing; reconnect or check the website format")?;
+        .context("Arca did not return a sticker pack. Open its source page and reconnect in Accounts if needed.")?;
+    // The store navigation and recommendations also contain sticker thumbnails.
+    // Only the selected pack's body is a source of clipboard assets.
+    let body = doc
+        .select(&Selector::parse("article .article-body.emoticon-body").unwrap())
+        .next()
+        .context("Arca pack content missing; the website format may have changed")?;
     let mut stickers = Vec::new();
     let mut seen = HashSet::new();
-    for node in doc.select(&Selector::parse(".emoticon-view img, .emoticon-list img, .emoticon-wrapper img, .emoticon-item img, img.emoticon").unwrap()) {
-        let Some(raw)=node.value().attr("data-src").or(node.value().attr("src")) else {continue};
-        let url=asset_url(raw)?;
-        if !seen.insert(url.clone()){continue;}
-        let id=node.value().attr("data-id").map(str::to_owned).unwrap_or_else(||hex::encode(Sha256::digest(url.as_bytes()))[..24].into());
-        stickers.push(Sticker {id,label:node.value().attr("alt").filter(|s|!s.is_empty()).unwrap_or("Sticker").into(),url});
+    for node in body.select(&Selector::parse("img.emoticon, video.emoticon").unwrap()) {
+        let source = node.select(&Selector::parse("source[src]").unwrap()).next();
+        let Some(raw) = node
+            .value()
+            .attr("data-src")
+            .or(node.value().attr("src"))
+            .or_else(|| source.and_then(|n| n.value().attr("src")))
+        else {
+            continue;
+        };
+        let url = asset_url(raw)?;
+        if !seen.insert(url.clone()) {
+            continue;
+        }
+        let id = node
+            .value()
+            .attr("data-id")
+            .map(str::to_owned)
+            .unwrap_or_else(|| hex::encode(Sha256::digest(url.as_bytes()))[..24].into());
+        stickers.push(Sticker {
+            id,
+            label: node
+                .value()
+                .attr("alt")
+                .filter(|s| !s.is_empty())
+                .unwrap_or("Sticker")
+                .into(),
+            url,
+        });
     }
     ensure!(
         !stickers.is_empty(),

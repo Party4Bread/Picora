@@ -6,8 +6,8 @@ Status is evidence-based; a compiling adapter is not a verified desktop integrat
 | --- | --- |
 | Rust Linux build and tests | Linux debug/release builds and packaged tarball, 16 tests, formatting and Clippy passed on 2026-10-14 |
 | DCInside Korean search, pack details, image retrieval | Live network smoke test passed on 2026-10-14 |
-| Arca HTML parsing | Synthetic fixtures only; unauthenticated HTTP requests returned 403 |
-| Arca login/session/catalog/download | Requires a real user login and live validation |
+| Arca HTML parsing | Authenticated pack 54950 verified on 2026-10-15: correct pack title/body, 22 MP4 sticker elements; catalog thumbnails excluded |
+| Arca session/pack/download | User-assisted Chromium login cookies worked with the actual Rust client; all 22 pack-54950 stickers downloaded, decoded, cached, and converted to GIF. Embedded login and session persistence still need OS-specific acceptance testing |
 | Windows session persistence | Synthetic large-session DPAPI roundtrip, replacement, fresh-process reload, corruption rejection, and deletion tests; legacy Credential Manager size limit reproduced |
 | Linux X11 picker/library/clipboard | Verified under Xvfb/Openbox: live catalog, pack import/restart, global shortcut, Enter selection, one Ctrl+V, valid PNG received, no Enter sent, clipboard alive while hidden, and CLI library activation |
 | GNOME/KDE Wayland shortcut, clipboard and keyboard portals | Implemented, not yet exercised in a real compatible session |
@@ -34,9 +34,9 @@ For each supported desktop (Windows, macOS, X11, GNOME Wayland, KDE Wayland):
 
 ## Known boundaries
 
-- Arca markup/selectors and its search parameter need authenticated live confirmation. The adapter reports errors rather than silently treating unknown pages as empty results.
+- Arca pack parsing and MP4 downloads were verified with authenticated pack 54950. Catalog search/pagination and embedded login still need live acceptance testing. Cloudflare may require renewed browser verification.
 - Linux windows use X11/XWayland: winit 0.30 has no-op visibility and focus methods on its native Wayland backend. XWayland is therefore required on Wayland desktops. Wayland window activation/focus restoration is compositor-controlled. No universal Wayland foreground-window query exists in this app. Automatic paste depends on the compositor restoring the prior app after the picker hides.
 - Wayland input permission is session-scoped and must be re-enabled after restarting Picora. Older desktops may not expose the required portals.
 - File-paste acceptance and animated preservation belong to the destination app. Picora does not claim successful insertion based only on key injection.
-- Animation preview is bounded to 120 frames / 64 MiB decoded memory per asset. Originals are retained intact.
+- Animation preview is bounded to 120 frames / 64 MiB decoded memory per asset. Originals are retained intact. H.264 MP4 stickers are decoded with bundled OpenH264 (no separate FFmpeg installation); normal paste converts the complete supported clip to a looping GIF, still paste uses its first frame, and original-file paste keeps the MP4. Supported videos are non-fragmented H.264, at most 4096×4096, two minutes, 2000 frames, and 64 MiB total decoded RGBA. Larger clips or other codecs return an error.
 - GitHub self-updates use direct file replacement; see [updates](UPDATES.md). No signing, notarization, cloud sync, or automatic cache eviction of original attachments is included.
