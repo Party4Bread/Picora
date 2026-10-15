@@ -12,7 +12,7 @@ Status is evidence-based; a compiling adapter is not a verified desktop integrat
 | Linux X11 picker/library/clipboard | Verified under Xvfb/Openbox: live catalog, pack import/restart, global shortcut, Enter selection, one Ctrl+V, valid PNG received, no Enter sent, clipboard alive while hidden, and CLI library activation |
 | GNOME/KDE Wayland shortcut, clipboard and keyboard portals | Implemented, not yet exercised in a real compatible session |
 | Windows native integration | Native Rust 1.90 x64 MSVC: 16 tests, fmt and Clippy passed on 2026-10-14; hidden-window regression passed for existing/new library windows; live catalog/thumbnails, preview, pack download, library copy, CLI reopen and global picker shortcut verified. See [Windows diagnosis](WINDOWS-DEBUG.md). |
-| macOS native integration | Local cross-check blocked by absent Apple SDK; native CI/OS runs not yet observed |
+| macOS native integration | v0.1.2 native build/tests passed in CI, but an Apple M4 user reported a damaged-app launch warning on macOS 27.0.1. The v0.1.2 bundle was not sealed or notarized. See [macOS installation](MACOS-INSTALL.md); end-user Gatekeeper acceptance remains unverified. |
 | Discord and Telegram image/file paste | Manual target-app verification required on each OS |
 
 ## Self-updater verification (2026-10-15)
