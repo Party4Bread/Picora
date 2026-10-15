@@ -29,6 +29,7 @@ else:
             shutil.copy2(root / "packaging" / name, stage / name)
 for name in ["README.md", "docs/COMPATIBILITY.md", "docs/UPDATES.md", "docs/WINDOWS-DEBUG.md", "assets/OFL.txt"]:
     shutil.copy2(root / name, stage / Path(name).name)
+shutil.copytree(root / "assets" / "licenses", stage / "licenses", dirs_exist_ok=True)
 licenses = stage / "licenses" / "eframe"
 licenses.mkdir(parents=True, exist_ok=True)
 for name in ["LICENSE-MIT", "LICENSE-APACHE", "PICORA-PATCH.md"]:

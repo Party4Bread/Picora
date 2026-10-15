@@ -58,3 +58,27 @@ fn arca_detail_rejects_catalog_returned_instead_of_pack() {
         </div>"#;
     assert!(arca::parse_detail("54950", html).is_err());
 }
+
+#[test]
+fn arca_video_stickers_are_taken_from_pack_body() {
+    let html = r#"<article><div class="emoticon-header"><div class="emoticon-info"><div class="title">실비아 정실력측정</div></div></div>
+        <div class="article-body emoticon-body"><div class="emoticons-wrapper">
+        <video class="emoticon" data-id="308769222" data-src="//ac.arca.live/clip.mp4?expires=123&amp;key=test" poster="//ac.arca.live/clip.thumbnail.webp"></video>
+        <video class="emoticon" data-id="2"><source src="//ac.arca.live/second.mp4"></video>
+        <img class="emoticon" data-id="3" src="//ac.arca.live/still.png">
+        </div><img src="/static/assets/images/tag.svg"></div></article>"#;
+    let pack = arca::parse_detail("54950", html).unwrap();
+    assert_eq!(pack.stickers.len(), 3);
+    assert_eq!(pack.stickers[0].id, "308769222");
+    assert_eq!(
+        pack.stickers[0].url,
+        "https://ac.arca.live/clip.mp4?expires=123&key=test"
+    );
+    assert_eq!(pack.stickers[1].url, "https://ac.arca.live/second.mp4");
+}
+
+#[test]
+fn arca_catalog_video_thumbnails_are_readable() {
+    let packs = arca::parse_catalog(r#"<div class="emoticon-list"><a href="/e/54950?p=1"><video data-src="//ac.arca.live/thumbnail.mp4"></video><div class="title">실비아 정실력측정</div></a></div>"#).unwrap();
+    assert_eq!(packs[0].thumbnail, "https://ac.arca.live/thumbnail.mp4");
+}

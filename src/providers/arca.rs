@@ -43,7 +43,7 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
         if reference.provider != Provider::Arca || !found.insert(reference.key()) {
             continue;
         }
-        let image = node.select(&Selector::parse("img").unwrap()).next();
+        let image = node.select(&Selector::parse("img, video").unwrap()).next();
         let title = node
             .select(&Selector::parse(".title, .name, .emoticon-title").unwrap())
             .next()
@@ -107,8 +107,14 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
         .context("Arca pack content missing; the website format may have changed")?;
     let mut stickers = Vec::new();
     let mut seen = HashSet::new();
-    for node in body.select(&Selector::parse("img.emoticon").unwrap()) {
-        let Some(raw) = node.value().attr("data-src").or(node.value().attr("src")) else {
+    for node in body.select(&Selector::parse("img.emoticon, video.emoticon").unwrap()) {
+        let source = node.select(&Selector::parse("source[src]").unwrap()).next();
+        let Some(raw) = node
+            .value()
+            .attr("data-src")
+            .or(node.value().attr("src"))
+            .or_else(|| source.and_then(|n| n.value().attr("src")))
+        else {
             continue;
         };
         let url = asset_url(raw)?;

@@ -1,3 +1,4 @@
+mod video;
 use anyhow::{Context, Result, ensure};
 use image::{AnimationDecoder, ImageDecoder, ImageFormat, ImageReader};
 use sha2::{Digest, Sha256};
@@ -13,9 +14,14 @@ pub struct Frame {
     pub height: u32,
     pub millis: u64,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MediaFormat {
+    Image(ImageFormat),
+    Mp4,
+}
 pub struct Decoded {
     pub frames: Vec<Frame>,
-    pub format: ImageFormat,
+    pub format: MediaFormat,
     pub animated: bool,
 }
 #[derive(Debug, Clone)]
@@ -48,6 +54,15 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded> {
         bytes.len() <= super::providers::MAX_DOWNLOAD,
         "Image is too large"
     );
+    if bytes.get(4..8) == Some(b"ftyp") {
+        let mut frames = video::decode(bytes)?;
+        frames.truncate(120);
+        return Ok(Decoded {
+            frames,
+            format: MediaFormat::Mp4,
+            animated: true,
+        });
+    }
     let format = image::guess_format(bytes).context("Not a supported image")?;
     let reader = BufReader::new(Cursor::new(bytes));
     let animation: Option<image::Frames<'_>> = match format {
@@ -111,7 +126,7 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded> {
     ensure!(!frames.is_empty(), "Image contains no frames");
     Ok(Decoded {
         frames,
-        format,
+        format: MediaFormat::Image(format),
         animated,
     })
 }
@@ -137,7 +152,7 @@ impl MediaCache {
             return Ok(None);
         }
         let extension = std::fs::read_to_string(manifest)?;
-        if !["png", "gif", "webp", "jpg"].contains(&extension.as_str()) {
+        if !["png", "gif", "webp", "jpg", "mp4"].contains(&extension.as_str()) {
             return Ok(None);
         }
         let mut asset = Asset {
@@ -166,10 +181,11 @@ impl MediaCache {
             .lock()
             .map_err(|_| anyhow::anyhow!("Cache lock unavailable"))?;
         let extension = match decoded.format {
-            ImageFormat::Png => "png",
-            ImageFormat::Gif => "gif",
-            ImageFormat::WebP => "webp",
-            ImageFormat::Jpeg => "jpg",
+            MediaFormat::Image(ImageFormat::Png) => "png",
+            MediaFormat::Image(ImageFormat::Gif) => "gif",
+            MediaFormat::Image(ImageFormat::WebP) => "webp",
+            MediaFormat::Image(ImageFormat::Jpeg) => "jpg",
+            MediaFormat::Mp4 => "mp4",
             _ => anyhow::bail!("Unsupported sticker image format"),
         };
         let dir = self.dir(url);
@@ -202,6 +218,56 @@ impl MediaCache {
                 asset.animated || asset.original.extension().is_some_and(|e| e == "gif")
             }
         };
+        if matches!(mode, CopyMode::Auto) && asset.original.extension().is_some_and(|e| e == "mp4")
+        {
+            let bytes = std::fs::read(&asset.original)?;
+            let path = asset.original.with_file_name(format!(
+                "animation-{}.gif",
+                hex::encode(Sha256::digest(&bytes))
+            ));
+            let _guard = self
+                .disk
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Cache lock unavailable"))?;
+            let valid = std::fs::read(&path).is_ok_and(|b| {
+                decode(&b).is_ok_and(|d| d.format == MediaFormat::Image(ImageFormat::Gif))
+            });
+            if !valid {
+                let frames = video::decode(&bytes)?;
+                let mut encoded = Vec::new();
+                {
+                    let mut encoder = image::codecs::gif::GifEncoder::new(&mut encoded);
+                    encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
+                    let mut elapsed = 0u64;
+                    let mut written_ticks = 0u64;
+                    for frame in frames {
+                        elapsed += frame.millis;
+                        let ticks = (elapsed + 5) / 10;
+                        let delay = ticks.saturating_sub(written_ticks).max(1) * 10;
+                        written_ticks += delay / 10;
+                        encoder.encode_frame(image::Frame::from_parts(
+                            image::RgbaImage::from_raw(frame.width, frame.height, frame.rgba)
+                                .context("Invalid video frame dimensions")?,
+                            0,
+                            0,
+                            image::Delay::from_numer_denom_ms(delay as u32, 1),
+                        ))?;
+                    }
+                }
+                ensure!(
+                    encoded.len() <= super::providers::MAX_DOWNLOAD,
+                    "Converted animation is too large"
+                );
+                let mut output = tempfile::NamedTempFile::new_in(
+                    path.parent().context("Missing cache directory")?,
+                )?;
+                std::io::Write::write_all(&mut output, &encoded)?;
+                output
+                    .persist(&path)
+                    .context("Cannot save animated clipboard file")?;
+            }
+            asset.original = path;
+        }
         if matches!(mode, CopyMode::Auto)
             && asset.animated
             && asset.original.extension().is_some_and(|e| e == "png")
@@ -217,8 +283,9 @@ impl MediaCache {
                 .map_err(|_| anyhow::anyhow!("Cache lock unavailable"))?;
             let valid = std::fs::metadata(&path)
                 .is_ok_and(|m| m.len() <= super::providers::MAX_DOWNLOAD as u64)
-                && std::fs::read(&path)
-                    .is_ok_and(|bytes| decode(&bytes).is_ok_and(|d| d.format == ImageFormat::Gif));
+                && std::fs::read(&path).is_ok_and(|bytes| {
+                    decode(&bytes).is_ok_and(|d| d.format == MediaFormat::Image(ImageFormat::Gif))
+                });
             if !valid {
                 let mut decoder = image::codecs::png::PngDecoder::new(Cursor::new(bytes))?;
                 decoder.set_limits(limits())?;

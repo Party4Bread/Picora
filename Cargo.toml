@@ -1,6 +1,6 @@
 [package]
 name = "picora"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A cross-platform sticker picker for DCInside and Arca"
 
@@ -38,6 +38,8 @@ interprocess = "2"
 fs2 = "0.4"
 open = "5"
 tempfile = "3"
+mp4 = "0.14"
+openh264 = "0.9.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 winit = { version = "0.30", default-features = false, features = ["x11"] }

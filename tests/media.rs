@@ -143,3 +143,93 @@ fn concurrent_import_and_preview_leave_a_readable_cached_asset() {
         128
     );
 }
+
+#[test]
+fn mp4_stickers_preview_and_copy_as_animation_or_original() {
+    let bytes = include_bytes!("fixtures/animation.mp4");
+    let decoded = decode(bytes).unwrap();
+    assert!(decoded.animated);
+    assert_eq!(decoded.frames.len(), 12);
+    assert_eq!(decoded.frames[0].width, 32);
+    assert_eq!(decoded.frames.iter().map(|f| f.millis).sum::<u64>(), 1000);
+    let dir = tempfile::tempdir().unwrap();
+    let cache = MediaCache::new(dir.path().to_owned()).unwrap();
+    let asset = cache.save("video", bytes).unwrap();
+    assert_eq!(asset.original.extension().unwrap(), "mp4");
+    assert!(cache.cached("video").unwrap().unwrap().animated);
+    let (paste, file) = cache.prepare_copy(asset.clone(), CopyMode::Auto).unwrap();
+    assert!(file);
+    assert_eq!(paste.original.extension().unwrap(), "gif");
+    let gif = decode(&std::fs::read(&paste.original).unwrap()).unwrap();
+    assert_eq!(gif.frames.len(), 12);
+    assert_ne!(gif.frames[0].rgba, gif.frames[11].rgba);
+    let duration = gif.frames.iter().map(|f| f.millis).sum::<u64>();
+    assert!(duration.abs_diff(1000) <= 10, "GIF duration: {duration}");
+    assert!(
+        !cache
+            .prepare_copy(asset.clone(), CopyMode::Still)
+            .unwrap()
+            .1
+    );
+    assert_eq!(
+        std::fs::read(
+            cache
+                .prepare_copy(asset, CopyMode::Original)
+                .unwrap()
+                .0
+                .original
+        )
+        .unwrap(),
+        bytes
+    );
+}
+
+#[test]
+fn mp4_frames_match_independent_reference_in_display_order() {
+    let reference = image::load_from_memory(include_bytes!("fixtures/animation-reference.png"))
+        .unwrap()
+        .to_rgba8();
+    let decoded = decode(include_bytes!("fixtures/animation.mp4")).unwrap();
+    for (index, frame) in decoded.frames.iter().enumerate() {
+        let mut error = 0u64;
+        for y in 0..32 {
+            for x in 0..32 {
+                let expected = reference.get_pixel(index as u32 * 32 + x, y);
+                for channel in 0..3 {
+                    error += u64::from(
+                        frame.rgba[((y * 32 + x) * 4) as usize + channel]
+                            .abs_diff(expected[channel]),
+                    );
+                }
+            }
+        }
+        assert!(
+            error / (32 * 32 * 3) < 4,
+            "frame {index}: RGB error {error}"
+        );
+    }
+}
+
+#[test]
+fn malformed_mp4_timing_and_sample_sizes_are_errors() {
+    let original = include_bytes!("fixtures/animation.mp4");
+    for (kind, offset, value, expected) in [
+        (b"mdhd", 16, 0u32, "timescale"),
+        (b"stts", 12, 0, "timing"),
+        (b"stsc", 12, 0, "chunk"),
+        (b"stsz", 8, original.len() as u32 + 1, "sample size"),
+    ] {
+        let mut bytes = original.to_vec();
+        let pos = bytes.windows(4).position(|b| b == kind).unwrap() + offset;
+        bytes[pos..pos + 4].copy_from_slice(&value.to_be_bytes());
+        let error = decode(&bytes).err().expect("malformed media must fail");
+        assert!(format!("{error:#}").contains(expected), "{error:#}");
+    }
+    assert!(decode(&original[..original.len() / 2]).is_err());
+}
+
+#[test]
+fn mp4_zero_sized_child_is_rejected_without_hanging() {
+    let bytes = b"\x00\x00\x00\x10ftypisom\x00\x00\x00\x00\x00\x00\x00\x10moov\x00\x00\x00\x00free";
+    assert!(decode(bytes).is_err());
+}
