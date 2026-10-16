@@ -36,6 +36,11 @@ jobs:
       - run: cargo build --locked --release
       - name: Package unsigned desktop build
         run: python scripts/package.py
+      - name: Verify macOS bundle and packaged launch
+        if: runner.os == 'macOS'
+        run: |
+          python scripts/test_macos_package.py dist/*-macos-*.zip
+          hdiutil verify dist/*-macos-*.dmg
       - name: Build Windows installer
         if: runner.os == 'Windows'
         shell: pwsh

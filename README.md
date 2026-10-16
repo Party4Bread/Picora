@@ -118,3 +118,5 @@ Noto Sans KR is bundled under the [SIL Open Font License](assets/OFL.txt), sourc
 ## Self-updates
 
 Settings → Updates checks GitHub Releases and offers **Update and restart**. Updates replace app files directly on all platforms, including Windows, while preserving your library and settings. See [update and recovery details](docs/UPDATES.md). An existing installation needs one manual upgrade to acquire this updater.
+
+macOS (Apple Silicon): see [installation and signing limitations](docs/MACOS-INSTALL.md). The DMG provides drag-to-Applications installation; current builds are not Apple-notarized.

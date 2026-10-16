@@ -1,8 +1,9 @@
-"""Create portable unsigned archives from `cargo build --release`. No publishing."""
+"""Create portable archives and an ad-hoc-signed macOS disk image from `cargo build --release`. No publishing."""
 from pathlib import Path
 import platform
 import plistlib
 import shutil
+import subprocess
 import tarfile
 import tomllib
 import zipfile
@@ -22,6 +23,10 @@ if system == "Darwin":
     shutil.copy2(exe, app / "MacOS" / "picora")
     with (app / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": "Picora", "CFBundleDisplayName": "Picora", "CFBundleExecutable": "picora", "CFBundleIdentifier": "app.picora.desktop", "CFBundleVersion": version, "CFBundleShortVersionString": version, "CFBundlePackageType": "APPL", "LSUIElement": True, "NSHighResolutionCapable": True}, f)
+    # Seal the complete bundle, not just the linker-signed Mach-O executable.
+    # Ad-hoc signing provides integrity, NOT Developer ID/Gatekeeper trust.
+    subprocess.run(["codesign", "--force", "--sign", "-", str(app.parent)], check=True)
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app.parent)], check=True)
 else:
     shutil.copy2(exe, stage / exe.name)
     if system == "Linux":
@@ -49,4 +54,15 @@ else:
         for file in stage.rglob("*"):
             if file.is_file():
                 archive.write(file, file.relative_to(stage.parent))
+if system == "Darwin":
+    # Keep the updater ZIP layout unchanged. The DMG is for first installation.
+    disk = root / "target" / "package" / "macos-dmg"
+    if disk.exists():
+        shutil.rmtree(disk)
+    disk.mkdir(parents=True)
+    subprocess.run(["ditto", str(stage / "Picora.app"), str(disk / "Picora.app")], check=True)
+    (disk / "Applications").symlink_to("/Applications")
+    shutil.copy2(root / "docs" / "MACOS-INSTALL.md", disk / "READ-ME.txt")
+    subprocess.run(["hdiutil", "create", "-volname", "Picora", "-srcfolder", str(disk),
+                    "-ov", "-format", "UDZO", str(out / f"{name}.dmg")], check=True)
 print(out / name)
