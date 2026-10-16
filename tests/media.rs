@@ -233,3 +233,42 @@ fn mp4_zero_sized_child_is_rejected_without_hanging() {
     let bytes = b"\x00\x00\x00\x10ftypisom\x00\x00\x00\x00\x00\x00\x00\x10moov\x00\x00\x00\x00free";
     assert!(decode(bytes).is_err());
 }
+
+#[test]
+fn cache_persists_integrity_metadata_and_migrates_legacy_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = MediaCache::new(dir.path().to_owned()).unwrap();
+    let bytes = include_bytes!("fixtures/animation.mp4");
+    let asset = cache.save("metadata", bytes).unwrap();
+    let metadata = asset.original.with_file_name("metadata.json");
+    assert!(
+        metadata.exists(),
+        "warm cache hits must not decode animation again"
+    );
+    std::fs::remove_file(&metadata).unwrap();
+    let legacy = cache.cached("metadata").unwrap().unwrap();
+    assert!(legacy.animated);
+    assert!(metadata.exists(), "legacy entries should migrate once");
+    let mut corrupted = std::fs::read(&asset.original).unwrap();
+    let last = corrupted.len() - 1;
+    corrupted[last] ^= 1;
+    std::fs::write(&asset.original, corrupted).unwrap();
+    assert!(
+        cache.cached("metadata").unwrap().is_none(),
+        "same-length corruption must be detected"
+    );
+}
+
+#[test]
+fn still_preview_does_not_read_or_decode_the_original_animation() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = MediaCache::new(dir.path().to_owned()).unwrap();
+    let asset = cache
+        .save("still-preview", include_bytes!("fixtures/animation.mp4"))
+        .unwrap();
+    std::fs::remove_file(&asset.original).unwrap();
+    let decoded = picora::media::preview_asset(&asset, false).unwrap();
+    assert_eq!(decoded.frames.len(), 1);
+    assert!(decoded.frames[0].width <= 160);
+    assert!(picora::media::preview_asset(&asset, true).is_err());
+}

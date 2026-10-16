@@ -63,10 +63,10 @@ impl App {
                         Err(e) => self.message(format!("Download incomplete: {e:#}. Open the pack and retry; cached images are reused."), true),
                     }
                 }
-                Event::Media(url, result, _permit) => {
+                Event::Media(url, result, animate, _permit) => {
                     self.inflight.remove(&url);
                     match result {
-                        Ok((_asset, decoded)) => {
+                        Ok((asset, decoded)) => {
                             let mut frames = Vec::new();
                             let mut delays = Vec::new();
                             let mut bytes = 0;
@@ -76,7 +76,7 @@ impl App {
                                 frames.push(ctx.load_texture(format!("{url}:{i}"), color, egui::TextureOptions::LINEAR));
                                 delays.push(f.millis);
                             }
-                            self.cache_visual(url, Visual { frames, delays, bytes, animation_loaded: true, last_used: ctx.cumulative_frame_nr() }, 128 * 1024 * 1024);
+                            self.cache_visual(url, Visual { frames, delays, bytes, animation_loaded: animate || !asset.animated, last_used: ctx.cumulative_frame_nr() }, 128 * 1024 * 1024);
                         }
                         Err(e) => { self.failed.insert(url, e.to_string()); }
                     }

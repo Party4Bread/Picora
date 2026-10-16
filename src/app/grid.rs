@@ -40,21 +40,13 @@ impl App {
                 && self.inflight.insert(url.into())
             {
                 // Restore animation on demand while retaining the still on screen.
-                self.services.media(provider, url.into());
+                self.services.media(provider, url.into(), true);
             }
             let frame = if response.hovered() && v.frames.len() > 1 {
-                ui.ctx().request_repaint_after(Duration::from_millis(35));
-                let total: u64 = v.delays.iter().sum();
-                let mut t = (ui.input(|i| i.time) * 1000.) as u64 % total.max(1);
-                let mut n = 0;
-                for (i, d) in v.delays.iter().enumerate() {
-                    if t < *d {
-                        n = i;
-                        break;
-                    }
-                    t -= *d;
-                }
-                n
+                let (frame, wait) =
+                    animation_frame(&v.delays, (ui.input(|i| i.time) * 1000.) as u64);
+                ui.ctx().request_repaint_after(wait);
+                frame
             } else {
                 0
             };
@@ -88,7 +80,7 @@ impl App {
                 egui::Stroke::new(1.5_f32, ui.visuals().weak_text_color()),
             );
             if !url.is_empty() && self.inflight.insert(url.into()) {
-                self.services.media(provider, url.into());
+                self.services.media(provider, url.into(), false);
             }
         }
         response
@@ -327,5 +319,36 @@ mod tests {
             });
         });
         assert_eq!(selected, 1);
+    }
+}
+
+fn animation_frame(delays: &[u64], elapsed: u64) -> (usize, Duration) {
+    let total = delays.iter().sum::<u64>().max(1);
+    let mut position = elapsed % total;
+    for (index, delay) in delays.iter().enumerate() {
+        if position < *delay {
+            return (index, Duration::from_millis(delay - position));
+        }
+        position -= delay;
+    }
+    (0, Duration::from_millis(100))
+}
+
+#[cfg(test)]
+mod animation_timing_tests {
+    use super::*;
+    #[test]
+    fn repaint_waits_for_next_frame_boundary_and_wraps() {
+        let delays = [100, 200];
+        assert_eq!(animation_frame(&delays, 0), (0, Duration::from_millis(100)));
+        assert_eq!(animation_frame(&delays, 99), (0, Duration::from_millis(1)));
+        assert_eq!(
+            animation_frame(&delays, 100),
+            (1, Duration::from_millis(200))
+        );
+        assert_eq!(
+            animation_frame(&delays, 350),
+            (0, Duration::from_millis(50))
+        );
     }
 }

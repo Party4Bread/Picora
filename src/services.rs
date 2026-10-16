@@ -22,6 +22,7 @@ pub enum Event {
     Media(
         String,
         Result<(Asset, Decoded)>,
+        bool,
         tokio::sync::OwnedSemaphorePermit,
     ),
     Progress(String),
@@ -108,7 +109,7 @@ impl Services {
         let url = url.to_owned();
         tokio::task::spawn_blocking(move || cache.save(&url, &bytes)).await?
     }
-    pub fn media(&self, p: Provider, url: String) {
+    pub fn media(&self, p: Provider, url: String, animate: bool) {
         let s = self.clone();
         self.runtime.spawn(async move {
             let Ok(permit) = s.decode_slots.clone().acquire_owned().await else {
@@ -117,14 +118,13 @@ impl Services {
             let result = async {
                 let asset = s.asset(p, &url).await?;
                 let a = asset.clone();
-                let decoded = tokio::task::spawn_blocking(move || {
-                    crate::media::preview(&std::fs::read(a.original)?)
-                })
-                .await??;
+                let decoded =
+                    tokio::task::spawn_blocking(move || crate::media::preview_asset(&a, animate))
+                        .await??;
                 Ok((asset, decoded))
             }
             .await;
-            s.bus.send(Event::Media(url, result, permit));
+            s.bus.send(Event::Media(url, result, animate, permit));
         });
     }
     pub fn install(&self, pack: Pack) {
