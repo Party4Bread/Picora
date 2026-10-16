@@ -13,6 +13,11 @@ impl App {
                 .min_size(Vec2::splat(size))
                 .frame(false),
         );
+        // Discover lays out all rows. Clipped rows must not start downloads or
+        // compete with visible thumbnails for the bounded texture cache.
+        if !ui.is_rect_visible(response.rect) {
+            return response;
+        }
         let fill = if selected {
             ui.visuals().selection.bg_fill
         } else if response.hovered() {
@@ -27,7 +32,16 @@ impl App {
         };
         ui.painter()
             .rect(response.rect, 8., fill, stroke, egui::StrokeKind::Inside);
-        if let Some(v) = self.visuals.get(url) {
+        if let Some(v) = self.visuals.get_mut(url) {
+            v.last_used = ui.ctx().cumulative_frame_nr();
+            if response.hovered()
+                && !v.animation_loaded
+                && !self.failed.contains_key(url)
+                && self.inflight.insert(url.into())
+            {
+                // Restore animation on demand while retaining the still on screen.
+                self.services.media(provider, url.into());
+            }
             let frame = if response.hovered() && v.frames.len() > 1 {
                 ui.ctx().request_repaint_after(Duration::from_millis(35));
                 let total: u64 = v.delays.iter().sum();

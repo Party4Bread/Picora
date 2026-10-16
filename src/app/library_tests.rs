@@ -488,3 +488,124 @@ fn picker_accepts_repeated_korean_commits_without_preedit() {
         assert!(app.pending.is_none(), "composition must not copy a sticker");
     }
 }
+
+#[test]
+fn animation_cache_pressure_keeps_still_thumbnails() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    // Three 12-byte animations exceed the 32-byte test cache, but their stills fit.
+    for index in 0..3 {
+        let frames = (0..3)
+            .map(|frame| {
+                ctx.load_texture(
+                    format!("preview-{index}-{frame}"),
+                    egui::ColorImage::new([1, 1], vec![Color32::WHITE]),
+                    egui::TextureOptions::LINEAR,
+                )
+            })
+            .collect();
+        app.cache_visual(
+            index.to_string(),
+            Visual {
+                frames,
+                delays: vec![100; 3],
+                bytes: 12,
+                animation_loaded: true,
+                last_used: index,
+            },
+            32,
+        );
+    }
+    assert_eq!(
+        app.visuals.len(),
+        3,
+        "cache pressure must not erase a loaded still"
+    );
+    assert!(app.visuals.values().all(|v| !v.frames.is_empty()));
+    assert!(app.visuals.values().map(|v| v.bytes).sum::<usize>() <= 32);
+}
+
+#[test]
+fn clipped_thumbnail_does_not_request_media() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.set_clip_rect(egui::Rect::from_min_max(
+                egui::Pos2::ZERO,
+                egui::pos2(100., 100.),
+            ));
+            ui.add_space(200.);
+            app.thumb(ui, Provider::Dcinside, "offscreen", 84., false);
+        });
+    });
+    assert!(app.inflight.is_empty());
+}
+
+#[test]
+fn evicted_animation_keeps_still_and_reloads_only_on_hover() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let texture = ctx.load_texture(
+        "still",
+        egui::ColorImage::new([1, 1], vec![Color32::WHITE]),
+        egui::TextureOptions::LINEAR,
+    );
+    app.visuals.insert(
+        "demoted".into(),
+        Visual {
+            frames: vec![texture],
+            delays: vec![100],
+            bytes: 4,
+            animation_loaded: false,
+            last_used: 0,
+        },
+    );
+    let render = |app: &mut App, events| {
+        let mut rect = egui::Rect::NOTHING;
+        let _ = ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    rect = app
+                        .thumb(ui, Provider::Dcinside, "demoted", 84., false)
+                        .rect;
+                });
+            },
+        );
+        rect
+    };
+    let rect = render(&mut app, vec![]);
+    render(&mut app, vec![]);
+    assert!(
+        app.inflight.is_empty(),
+        "idle redraw must not reload animation"
+    );
+    for _ in 0..2 {
+        render(&mut app, vec![egui::Event::PointerMoved(rect.center())]);
+    }
+    assert_eq!(app.inflight.len(), 1);
+    assert_eq!(
+        app.visuals["demoted"].frames.len(),
+        1,
+        "still must remain during reload"
+    );
+}
