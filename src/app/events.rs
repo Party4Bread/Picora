@@ -76,11 +76,7 @@ impl App {
                                 frames.push(ctx.load_texture(format!("{url}:{i}"), color, egui::TextureOptions::LINEAR));
                                 delays.push(f.millis);
                             }
-                            while self.visuals.values().map(|v| v.bytes).sum::<usize>() + bytes > 128 * 1024 * 1024 && !self.visuals.is_empty() {
-                                let key = self.visuals.keys().next().unwrap().clone();
-                                self.visuals.remove(&key);
-                            }
-                            self.visuals.insert(url, Visual { frames, delays, bytes });
+                            self.cache_visual(url, Visual { frames, delays, bytes, animation_loaded: true, last_used: ctx.cumulative_frame_nr() }, 128 * 1024 * 1024);
                         }
                         Err(e) => { self.failed.insert(url, e.to_string()); }
                     }
@@ -124,6 +120,42 @@ impl App {
         {
             let (_, target, picker) = self.paste_at.take().unwrap();
             self.services.paste(target, picker);
+        }
+    }
+}
+
+impl App {
+    pub(super) fn cache_visual(&mut self, url: String, visual: Visual, budget: usize) {
+        self.visuals.insert(url.clone(), visual);
+        while self.visuals.values().map(|v| v.bytes).sum::<usize>() > budget {
+            // Shed cold animation frames first. Keep every loaded first frame so
+            // ordinary redraws never turn an animated thumbnail into a loader.
+            let animation = self
+                .visuals
+                .iter()
+                .filter(|(_, v)| v.frames.len() > 1)
+                .min_by_key(|(key, v)| (*key == &url, v.last_used))
+                .map(|(key, _)| key.clone());
+            if let Some(key) = animation {
+                let v = self.visuals.get_mut(&key).unwrap();
+                v.frames.truncate(1);
+                v.delays.truncate(1);
+                let [width, height] = v.frames[0].size();
+                v.bytes = width * height * 4;
+                v.animation_loaded = false;
+            } else {
+                // Bound the still cache too when browsing very large libraries.
+                let key = self
+                    .visuals
+                    .iter()
+                    .min_by_key(|(key, v)| (*key == &url, v.last_used))
+                    .map(|(key, _)| key.clone());
+                if let Some(key) = key {
+                    self.visuals.remove(&key);
+                } else {
+                    break;
+                }
+            }
         }
     }
 }

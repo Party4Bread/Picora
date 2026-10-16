@@ -46,6 +46,8 @@ struct Visual {
     frames: Vec<egui::TextureHandle>,
     delays: Vec<u64>,
     bytes: usize,
+    animation_loaded: bool,
+    last_used: u64,
 }
 struct PendingPaste {
     interaction: platform::paste::Ticket,
