@@ -1,6 +1,8 @@
 use super::*;
 fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) -> App {
     design::configure(ctx);
+    #[cfg(target_os = "linux")]
+    ime::install(ctx);
     let store = Store::open(&root.join("library.sqlite3")).unwrap();
     let settings = Settings::default();
     let (tx, rx) = mpsc::channel();
@@ -442,7 +444,6 @@ fn minimum_picker_keeps_custom_group_identity_visible() {
 #[test]
 #[cfg(target_os = "linux")]
 fn picker_accepts_repeated_korean_commits_without_preedit() {
-    use eframe::App as _;
     for prefix in ["", "cat "] {
         let root = tempfile::tempdir().unwrap();
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -452,7 +453,7 @@ fn picker_accepts_repeated_korean_commits_without_preedit() {
         let ctx = egui::Context::default();
         let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
         let mut render = |events| {
-            let mut input = egui::RawInput {
+            let input = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
                     egui::vec2(460., 540.),
@@ -460,7 +461,6 @@ fn picker_accepts_repeated_korean_commits_without_preedit() {
                 events,
                 ..Default::default()
             };
-            app.raw_input_hook(&ctx, &mut input);
             let _ = ctx.run(input, |ctx| app.picker(ctx));
             app.picker_search.clone()
         };
@@ -486,6 +486,48 @@ fn picker_accepts_repeated_korean_commits_without_preedit() {
         ]);
         assert_eq!(actual, format!("{prefix}가나다라"));
         assert!(app.pending.is_none(), "composition must not copy a sticker");
+    }
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn korean_commits_work_in_viewport_passes_without_eframe_input_hook() {
+    for viewport in [
+        egui::ViewportId::ROOT,
+        egui::ViewportId::from_hash_of("library"),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let _app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+        let mut text = String::new();
+        let mut render = |events| {
+            let mut input = egui::RawInput {
+                viewport_id: viewport,
+                events,
+                ..Default::default()
+            };
+            input.viewports.entry(viewport).or_default();
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.text_edit_singleline(&mut text).request_focus();
+                });
+            });
+            text.clone()
+        };
+        render(vec![]);
+        for (syllable, expected) in [("고", "고"), ("양", "고양"), ("이", "고양이")] {
+            assert_eq!(
+                render(vec![
+                    egui::Event::Ime(egui::ImeEvent::Commit(syllable.into())),
+                    egui::Event::Ime(egui::ImeEvent::Disabled)
+                ]),
+                expected
+            );
+        }
     }
 }
 

@@ -127,6 +127,8 @@ impl App {
             .insert(0, "noto-kr".into());
         ctx.set_fonts(fonts);
         design::configure(ctx);
+        #[cfg(target_os = "linux")]
+        ime::install(ctx);
         let store = Store::open(&root.join("library.sqlite3"))?;
         let settings = store.settings()?;
         apply_theme(ctx, &settings.theme);
@@ -569,11 +571,6 @@ impl App {
     }
 }
 impl eframe::App for App {
-    #[cfg(target_os = "linux")]
-    fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
-        ime::prepare(ctx, input);
-    }
-
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "linux")]
         while gtk::events_pending() {

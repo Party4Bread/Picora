@@ -2,11 +2,24 @@
 //! See https://github.com/emilk/egui/issues/7906. Revisit when upgrading egui.
 use super::*;
 
-pub(super) fn prepare(ctx: &egui::Context, input: &mut egui::RawInput) {
-    let id = egui::Id::new("picora-ime-composition").with(input.viewport_id);
+pub(super) fn install(ctx: &egui::Context) {
+    // eframe's raw_input_hook is skipped for immediate child viewports (the
+    // library). egui's begin-pass callback runs for every viewport instead.
+    ctx.on_begin_pass(
+        "picora-linux-ime",
+        std::sync::Arc::new(|ctx| {
+            let mut events = ctx.input_mut(|input| std::mem::take(&mut input.events));
+            prepare(ctx, &mut events);
+            ctx.input_mut(|input| input.events = events);
+        }),
+    );
+}
+
+fn prepare(ctx: &egui::Context, input_events: &mut Vec<egui::Event>) {
+    let id = egui::Id::new("picora-ime-composition").with(ctx.viewport_id());
     let mut composing = ctx.data(|data| data.get_temp::<bool>(id).unwrap_or(false));
-    let mut events = Vec::with_capacity(input.events.len());
-    for event in input.events.drain(..) {
+    let mut events = Vec::with_capacity(input_events.len());
+    for event in input_events.drain(..) {
         match &event {
             egui::Event::Ime(egui::ImeEvent::Enabled) => composing = true,
             egui::Event::Ime(egui::ImeEvent::Disabled) => composing = false,
@@ -26,6 +39,6 @@ pub(super) fn prepare(ctx: &egui::Context, input: &mut egui::RawInput) {
         }
         events.push(event);
     }
-    input.events = events;
+    *input_events = events;
     ctx.data_mut(|data| data.insert_temp(id, composing));
 }

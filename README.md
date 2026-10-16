@@ -47,7 +47,7 @@ Picora starts in the system tray/menu bar. Closing a window keeps it running; us
 
 DCInside packs come from [DCInside's sticker repository](https://dccon.dcinside.com/). For [Arca sticker packs](https://arca.live/e/), open **Accounts → Sign in / reconnect**, sign in on the actual website, and close that window to return to Picora. Arca may require a browser challenge or renewed sign-in.
 
-Windows stores Arca cookies encrypted for your Windows account in `arca-session.dpapi`; other platforms use the OS credential store. If saving fails, the session stays in memory and Picora shows an error. [Compatibility notes](docs/COMPATIBILITY.md) distinguish verified Arca flows from remaining desktop-specific checks.
+Windows stores Arca cookies encrypted for your Windows account in `arca-session.dpapi`; other platforms use the OS credential store. If saving fails, the session stays in memory and Picora shows an error. See [compatibility notes](docs/COMPATIBILITY.md) for platform limitations.
 
 ### Animated stickers and library behavior
 
@@ -69,7 +69,7 @@ Reimporting a pack does not make its existing stickers appear newly added. Older
 
 Copying through Wayland data-control does not need Remote Desktop permission. Automatic paste does: the portal requests keyboard access only. Picora tries an already connected clipboard portal first, then native data-control, then the XWayland clipboard bridge. Declined input permission leaves manual paste available where clipboard access works.
 
-No single clipboard format works in every chat app. See [tested behavior and manual acceptance checks](docs/COMPATIBILITY.md) for the current verification record.
+No single clipboard format works in every chat app. See [compatibility notes](docs/COMPATIBILITY.md) for known limitations.
 
 ## Build from source
 
