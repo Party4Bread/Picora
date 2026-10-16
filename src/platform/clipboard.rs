@@ -9,6 +9,26 @@ pub struct ClipboardService {
 }
 impl ClipboardService {
     pub fn copy(&self, asset: &Asset, original: bool) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        if super::is_wayland() {
+            match copy_wayland(asset, original) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    // Some compositors do not expose data-control. Keep the existing
+                    // XWayland bridge available, but retain the native error if both fail.
+                    if std::env::var_os("DISPLAY").is_none() {
+                        return Err(error);
+                    }
+                    return self.copy_desktop(asset, original).map_err(|fallback| {
+                        anyhow!("Wayland clipboard failed: {error:#}; XWayland fallback failed: {fallback:#}")
+                    });
+                }
+            }
+        }
+        self.copy_desktop(asset, original)
+    }
+
+    fn copy_desktop(&self, asset: &Asset, original: bool) -> Result<()> {
         let mut guard = self
             .context
             .lock()
@@ -31,4 +51,32 @@ impl ClipboardService {
         }
         Ok(())
     }
+}
+
+#[cfg(target_os = "linux")]
+fn copy_wayland(asset: &Asset, original: bool) -> Result<()> {
+    use anyhow::Context;
+    use wl_clipboard_rs::copy::{MimeType, Options, Source};
+
+    let (mime, bytes) = if original {
+        let uri = url::Url::from_file_path(&asset.original)
+            .map_err(|_| anyhow!("Invalid sticker file path"))?;
+        ("text/uri-list", format!("{uri}\r\n").into_bytes())
+    } else {
+        (
+            "image/png",
+            std::fs::read(&asset.still).context("Cannot read sticker PNG")?,
+        )
+    };
+    // Default background mode waits for ownership to be prepared, then serves
+    // requests on a thread until replaced. Do not block the UI or stop after one
+    // request: clipboard managers and XWayland consumers may read more than once.
+    Options::new()
+        .copy(
+            Source::Bytes(bytes.into_boxed_slice()),
+            MimeType::Specific(mime.into()),
+        )
+        .context(
+            "Native Wayland clipboard unavailable (requires ext-data-control or wlr-data-control)",
+        )
 }
