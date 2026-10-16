@@ -140,7 +140,7 @@ cargo test --locked --test windows_viewports -- --ignored --nocapture
 cargo test --locked --test live live_dcinside_search_pack_and_image -- --ignored
 ```
 
-CI builds and tests Windows, macOS, and Linux. Version tags trigger a separate release workflow that publishes packages and an updater manifest only after the build matrix passes. See [release, update, and recovery details](docs/UPDATES.md).
+CI builds and tests Windows, macOS, and Linux once per pull request or main-branch push. Superseded CI runs are cancelled; successful main builds seed dependency caches for PRs and releases. CI artifacts are retained for seven days. Version tags run the matrix through the release workflow only, which publishes packages and an updater manifest after all platform checks pass. Published release assets are not subject to CI artifact retention. See [release, update, and recovery details](docs/UPDATES.md).
 
 On Linux, optional desktop integration files are included in the archive. Put the binary on `PATH`, install the desktop entry to `~/.local/share/applications/`, and the icon to `~/.local/share/icons/hicolor/scalable/apps/`.
 

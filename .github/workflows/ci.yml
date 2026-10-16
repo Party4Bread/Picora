@@ -1,6 +1,8 @@
 name: Rust desktop
 on:
   push:
+    # Feature branches run through pull_request; tags run through release.yml.
+    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -8,8 +10,15 @@ on:
 permissions:
   contents: read
 
+# Use a distinct prefix from release.yml: reusable workflows inherit the
+# caller's github.workflow, and must never cancel their own release caller.
+concurrency:
+  group: desktop-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build:
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -25,12 +34,17 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          # PRs and tags restore main's cache, without filling the cache quota
+          # with private copies. Failed/partial builds must not seed empty caches.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libxdo-dev libgl1-mesa-dev libdbus-1-dev
-      - run: python -m unittest discover -s scripts -p test_update_manifest.py
-      - run: cargo fmt --check
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libxdo-dev libgl1-mesa-dev libdbus-1-dev
+      # These checks are platform-independent; run once per matrix.
+      - if: runner.os == 'Linux'
+        run: python -m unittest discover -s scripts -p test_update_manifest.py
+      - if: runner.os == 'Linux'
+        run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo build --locked --release
@@ -54,3 +68,7 @@ jobs:
           name: picora-${{ runner.os }}-${{ runner.arch }}
           path: dist/*
           if-no-files-found: error
+          # Archives/installers are compressed already. Releases copy these assets
+          # to permanent release storage before the short CI retention expires.
+          compression-level: 0
+          retention-days: 7
