@@ -198,6 +198,10 @@ impl App {
             app.updates.check(&app.services.runtime, ctx);
         }
         app.register_shortcut();
+        #[cfg(target_os = "linux")]
+        if platform::is_wayland() {
+            app.services.enable_wayland(true);
+        }
         match make_tray() {
             Ok(tray) => app._tray = Some(tray),
             Err(e) => {

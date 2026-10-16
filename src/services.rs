@@ -30,7 +30,7 @@ pub enum Event {
     Login(Result<String>),
     Show,
     #[cfg(target_os = "linux")]
-    Wayland(Result<crate::platform::wayland::Wayland>),
+    Wayland(Result<(crate::platform::wayland::Wayland, Option<String>)>),
 }
 #[derive(Clone)]
 pub struct Bus {
@@ -55,6 +55,8 @@ pub struct Services {
     cancellation: crate::platform::paste::Cancellation,
     #[cfg(target_os = "linux")]
     pub wayland: Arc<Mutex<Option<crate::platform::wayland::Wayland>>>,
+    #[cfg(target_os = "linux")]
+    wayland_connecting: Arc<tokio::sync::Mutex<()>>,
 }
 impl Services {
     pub fn new(runtime: tokio::runtime::Handle, cache: MediaCache, bus: Bus) -> Result<Self> {
@@ -73,6 +75,8 @@ impl Services {
             cancellation: Default::default(),
             #[cfg(target_os = "linux")]
             wayland: Arc::new(Mutex::new(None)),
+            #[cfg(target_os = "linux")]
+            wayland_connecting: Default::default(),
         })
     }
     pub fn repo(&self, p: Provider) -> Repository {
@@ -226,11 +230,17 @@ impl Services {
         crate::auth::forget()
     }
     #[cfg(target_os = "linux")]
-    pub fn enable_wayland(&self) {
+    pub fn enable_wayland(&self, automatic: bool) {
         let s = self.clone();
         self.runtime.spawn(async move {
-            let result = crate::platform::wayland::Wayland::connect().await;
-            s.bus.send(Event::Wayland(result));
+            let Ok(_guard) = s.wayland_connecting.try_lock() else {
+                return;
+            };
+            match crate::platform::wayland::permission::connect(automatic).await {
+                Ok(Some(session)) => s.bus.send(Event::Wayland(Ok(session))),
+                Ok(None) => (),
+                Err(e) => s.bus.send(Event::Wayland(Err(e))),
+            }
         });
     }
 }

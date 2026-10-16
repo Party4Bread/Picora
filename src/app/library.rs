@@ -448,7 +448,7 @@ impl App {
                 .button("Enable / reconnect Wayland keyboard access")
                 .clicked()
             {
-                self.services.enable_wayland();
+                self.services.enable_wayland(false);
                 self.message("Approve keyboard access in the desktop dialog", false);
             }
         }

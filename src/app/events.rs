@@ -105,9 +105,9 @@ impl App {
                 }
                 #[cfg(target_os = "linux")]
                 Event::Wayland(result) => match result {
-                    Ok(w) => {
+                    Ok((w, warning)) => {
                         *self.services.wayland.lock().unwrap() = Some(w);
-                        self.message("Wayland keyboard access enabled for this session", false);
+                        self.message(warning.unwrap_or_else(|| "Wayland keyboard access enabled".into()), false);
                     }
                     Err(e) => self.message(format!("Wayland input unavailable: {e:#}. Stickers can still be copied when a clipboard backend is available."), true),
                 },
