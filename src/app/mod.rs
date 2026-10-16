@@ -1,6 +1,8 @@
 mod design;
 mod events;
 mod grid;
+#[cfg(target_os = "linux")]
+mod ime;
 mod library;
 mod updates;
 use crate::{
@@ -565,6 +567,11 @@ impl App {
     }
 }
 impl eframe::App for App {
+    #[cfg(target_os = "linux")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+        ime::prepare(ctx, input);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "linux")]
         while gtk::events_pending() {
