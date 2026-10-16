@@ -651,3 +651,57 @@ fn evicted_animation_keeps_still_and_reloads_only_on_hover() {
         "still must remain during reload"
     );
 }
+
+#[test]
+fn visible_animation_loads_still_first_then_frames_on_hover() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let url = "cached-animation";
+    app.services
+        .cache
+        .save(url, include_bytes!("../../tests/fixtures/animation.mp4"))
+        .unwrap();
+    let render = |app: &mut App, events| {
+        let mut rect = egui::Rect::NOTHING;
+        let _ = ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    rect = app.thumb(ui, Provider::Dcinside, url, 80., false).rect;
+                });
+            },
+        );
+        rect
+    };
+    let finish = |app: &mut App| {
+        rt.block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while !app.inflight.is_empty() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    app.handle_events(&ctx);
+                }
+            })
+            .await
+            .unwrap();
+        });
+        assert!(app.failed.is_empty(), "{:?}", app.failed);
+    };
+    let rect = render(&mut app, vec![]);
+    finish(&mut app);
+    assert_eq!(app.visuals[url].frames.len(), 1);
+    assert!(!app.visuals[url].animation_loaded);
+    for _ in 0..2 {
+        render(&mut app, vec![egui::Event::PointerMoved(rect.center())]);
+    }
+    finish(&mut app);
+    assert!(app.visuals[url].animation_loaded);
+    assert!(app.visuals[url].frames.len() > 1);
+}

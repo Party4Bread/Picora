@@ -42,6 +42,40 @@ pub struct MediaCache {
     root: PathBuf,
     disk: std::sync::Arc<std::sync::Mutex<()>>,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CacheMetadata {
+    extension: String,
+    animated: bool,
+    hashes: [String; 3],
+}
+fn asset_hashes(asset: &Asset) -> Result<[String; 3]> {
+    let hash = |path: &PathBuf| -> Result<String> {
+        ensure!(
+            std::fs::metadata(path)?.len() <= super::providers::MAX_DOWNLOAD as u64,
+            "Cached image is too large"
+        );
+        Ok(hex::encode(Sha256::digest(std::fs::read(path)?)))
+    };
+    Ok([
+        hash(&asset.original)?,
+        hash(&asset.still)?,
+        hash(&asset.thumbnail)?,
+    ])
+}
+fn save_metadata(asset: &Asset, extension: &str, hashes: [String; 3]) -> Result<()> {
+    let metadata = CacheMetadata {
+        extension: extension.into(),
+        animated: asset.animated,
+        hashes,
+    };
+    let mut file = tempfile::NamedTempFile::new_in(
+        asset.original.parent().context("Missing cache directory")?,
+    )?;
+    std::io::Write::write_all(&mut file, &serde_json::to_vec(&metadata)?)?;
+    file.persist(asset.original.with_file_name("metadata.json"))?;
+    Ok(())
+}
+
 fn limits() -> image::Limits {
     let mut l = image::Limits::default();
     l.max_image_width = Some(4096);
@@ -161,19 +195,33 @@ impl MediaCache {
             thumbnail: dir.join("thumb.png"),
             animated: false,
         };
-        if asset.original.exists() && asset.still.exists() && asset.thumbnail.exists() {
-            let Ok(decoded) = decode(&std::fs::read(&asset.original)?) else {
-                return Ok(None);
-            };
-            if decode(&std::fs::read(&asset.still)?).is_err() {
+        let Ok(hashes) = asset_hashes(&asset) else {
+            return Ok(None);
+        };
+        if let Ok(bytes) = std::fs::read(dir.join("metadata.json"))
+            && let Ok(metadata) = serde_json::from_slice::<CacheMetadata>(&bytes)
+        {
+            if metadata.extension != extension || metadata.hashes != hashes {
                 return Ok(None);
             }
-            asset.animated = decoded.animated;
-            Ok(Some(asset))
-        } else {
-            Ok(None)
+            asset.animated = metadata.animated;
+            return Ok(Some(asset));
         }
+        // Old entries have no metadata. Validate once, then migrate without
+        // changing the original bytes or the legacy completion marker.
+        let Ok(decoded) = decode(&std::fs::read(&asset.original)?) else {
+            return Ok(None);
+        };
+        if decode(&std::fs::read(&asset.still)?).is_err()
+            || decode(&std::fs::read(&asset.thumbnail)?).is_err()
+        {
+            return Ok(None);
+        }
+        asset.animated = decoded.animated;
+        save_metadata(&asset, &extension, hashes)?;
+        Ok(Some(asset))
     }
+
     pub fn save(&self, url: &str, bytes: &[u8]) -> Result<Asset> {
         let decoded = decode(bytes)?;
         let _guard = self
@@ -190,6 +238,12 @@ impl MediaCache {
         };
         let dir = self.dir(url);
         std::fs::create_dir_all(&dir)?;
+        // Invalidate the old commit before replacing any files.
+        match std::fs::remove_file(dir.join("complete")) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+            Err(e) => return Err(e.into()),
+        }
         let asset = Asset {
             original: dir.join(format!("original.{extension}")),
             still: dir.join("still.png"),
@@ -204,6 +258,7 @@ impl MediaCache {
             .thumbnail(160, 160)
             .save(&asset.thumbnail)?;
         std::fs::write(&asset.original, bytes)?;
+        save_metadata(&asset, extension, asset_hashes(&asset)?)?;
         // Commit marker is written last. Interrupted downloads are never treated as complete.
         std::fs::write(dir.join("complete"), extension)?;
         Ok(asset)
@@ -350,4 +405,13 @@ pub fn preview(bytes: &[u8]) -> Result<Decoded> {
         }
     }
     Ok(decoded)
+}
+
+/// Idle thumbnails never decode the original animation. Hover previews do.
+pub fn preview_asset(asset: &Asset, animate: bool) -> Result<Decoded> {
+    preview(&std::fs::read(if animate {
+        &asset.original
+    } else {
+        &asset.thumbnail
+    })?)
 }
