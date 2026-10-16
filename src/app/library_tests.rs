@@ -438,3 +438,53 @@ fn minimum_picker_keeps_custom_group_identity_visible() {
         assert!(app.pending.is_none());
     }
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn picker_accepts_repeated_korean_commits_without_preedit() {
+    use eframe::App as _;
+    for prefix in ["", "cat "] {
+        let root = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+        let mut render = |events| {
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(460., 540.),
+                )),
+                events,
+                ..Default::default()
+            };
+            app.raw_input_hook(&ctx, &mut input);
+            let _ = ctx.run(input, |ctx| app.picker(ctx));
+            app.picker_search.clone()
+        };
+        render(vec![]);
+        render(vec![]);
+        render(vec![egui::Event::Text(prefix.into())]);
+        for (syllable, expected) in [("가", "가"), ("나", "가나"), ("다", "가나다")] {
+            let actual = render(vec![
+                egui::Event::Ime(egui::ImeEvent::Commit(syllable.into())),
+                egui::Event::Ime(egui::ImeEvent::Disabled),
+            ]);
+            assert_eq!(actual, format!("{prefix}{expected}"));
+        }
+        // A normal multi-frame preedit must still replace its marked text once.
+        render(vec![
+            egui::Event::Ime(egui::ImeEvent::Enabled),
+            egui::Event::Ime(egui::ImeEvent::Preedit("ㄹ".into())),
+        ]);
+        render(vec![egui::Event::Ime(egui::ImeEvent::Preedit("라".into()))]);
+        let actual = render(vec![
+            egui::Event::Ime(egui::ImeEvent::Commit("라".into())),
+            egui::Event::Ime(egui::ImeEvent::Disabled),
+        ]);
+        assert_eq!(actual, format!("{prefix}가나다라"));
+        assert!(app.pending.is_none(), "composition must not copy a sticker");
+    }
+}
