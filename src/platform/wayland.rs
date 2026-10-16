@@ -1,3 +1,4 @@
+pub(crate) mod permission;
 use crate::media::Asset;
 use anyhow::{Context, Result, ensure};
 use ashpd::desktop::{
@@ -25,35 +26,47 @@ pub struct Wayland {
     tx: mpsc::Sender<Command>,
 }
 impl Wayland {
-    pub async fn connect() -> Result<Self> {
+    pub async fn connect(restore_token: Option<&str>) -> Result<(Self, Option<String>)> {
         let remote = RemoteDesktop::new()
             .await
             .context("Desktop does not offer the Remote Desktop portal")?;
         let session = remote.create_session().await?;
-        remote
-            .select_devices(
-                &session,
-                DeviceType::Keyboard.into(),
-                None,
-                PersistMode::Application,
-            )
-            .await?
-            .response()?;
-        let clipboard = Clipboard::new().await.ok();
-        let clipboard = if let Some(c) = clipboard {
-            if c.request(&session).await.is_ok() {
-                Some(c)
+        let setup = async {
+            remote
+                .select_devices(
+                    &session,
+                    DeviceType::Keyboard.into(),
+                    restore_token,
+                    PersistMode::ExplicitlyRevoked,
+                )
+                .await?
+                .response()?;
+            let clipboard = Clipboard::new().await.ok();
+            let clipboard = if let Some(c) = clipboard {
+                if c.request(&session).await.is_ok() {
+                    Some(c)
+                } else {
+                    None
+                }
             } else {
                 None
+            };
+            let selected = remote.start(&session, None).await?.response()?;
+            ensure!(
+                selected.devices().contains(DeviceType::Keyboard),
+                "Keyboard permission was not granted"
+            );
+            Ok::<_, anyhow::Error>((clipboard, selected))
+        }
+        .await;
+        let (clipboard, selected) = match setup {
+            Ok(result) => result,
+            Err(e) => {
+                let _ = session.close().await;
+                return Err(e);
             }
-        } else {
-            None
         };
-        let selected = remote.start(&session, None).await?.response()?;
-        ensure!(
-            selected.devices().contains(DeviceType::Keyboard),
-            "Keyboard permission was not granted"
-        );
+        let restore_token = selected.restore_token().map(str::to_owned);
         let (tx, mut rx) = mpsc::channel::<Command>(8);
         tokio::spawn(async move {
             let mut contents: Option<(String, Vec<u8>)> = None;
@@ -63,6 +76,7 @@ impl Wayland {
                 None
             };
             let Ok(closed) = session.receive_closed().await else {
+                let _ = session.close().await;
                 return;
             };
             tokio::pin!(closed);
@@ -100,7 +114,7 @@ impl Wayland {
             }
             let _ = session.close().await;
         });
-        Ok(Self { tx })
+        Ok((Self { tx }, restore_token))
     }
     pub async fn copy(&self, asset: Asset, original: bool) -> Result<()> {
         let (tx, rx) = oneshot::channel();

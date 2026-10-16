@@ -67,7 +67,7 @@ Reimporting a pack does not make its existing stickers appear newly added. Older
 | KDE Plasma / Wayland | Native image/file clipboard access on data-control-capable compositors. Approve the desktop shortcut dialog and enable **Settings → Wayland keyboard access** for automatic paste. XWayland is required for picker windows. |
 | Other Wayland desktops | Clipboard and portal support vary. Picora retains portal/XWayland clipboard fallbacks. If the shortcut portal is unavailable, bind `picora --show` in desktop settings. |
 
-Copying through Wayland data-control does not need Remote Desktop permission. Automatic paste does: the portal requests keyboard access only. Picora tries an already connected clipboard portal first, then native data-control, then the XWayland clipboard bridge. Declined input permission leaves manual paste available where clipboard access works.
+Copying through Wayland data-control does not need Remote Desktop permission. Automatic paste does: the portal requests keyboard access only. Picora tries an already connected clipboard portal first, then native data-control, then the XWayland clipboard bridge. Declined input permission leaves manual paste available where clipboard access works. Picora securely saves the desktop’s permission restore token when available and attempts to reconnect after restart; the desktop may still ask for approval.
 
 No single clipboard format works in every chat app. See [compatibility notes](docs/COMPATIBILITY.md) for known limitations.
 
