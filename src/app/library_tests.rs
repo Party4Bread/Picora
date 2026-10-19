@@ -705,3 +705,41 @@ fn visible_animation_loads_still_first_then_frames_on_hover() {
     assert!(app.visuals[url].animation_loaded);
     assert!(app.visuals[url].frames.len() > 1);
 }
+
+#[test]
+fn accounts_show_saved_verified_and_failed_session_states() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    app.tab = Tab::Accounts;
+    *app.services.account_status.lock().unwrap() = crate::services::account::AccountStatus {
+        has_session: true,
+        saved: true,
+        ..Default::default()
+    };
+    frame(&mut app, &ctx, vec![]);
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Session saved · not checked").is_some());
+    assert!(label(&output, "Check connection").is_some());
+    app.services
+        .account_status
+        .lock()
+        .unwrap()
+        .finish_check(Ok(()));
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Connected").is_some());
+    assert!(label(&output, "Catalog access verified.").is_some());
+    app.services
+        .account_status
+        .lock()
+        .unwrap()
+        .finish_check(Err("Website verification required".into()));
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Connection needs attention").is_some());
+    assert!(label(&output, "Website verification required").is_some());
+    assert!(label(&output, "Catalog access verified.").is_none());
+}

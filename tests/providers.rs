@@ -82,3 +82,23 @@ fn arca_catalog_video_thumbnails_are_readable() {
     let packs = arca::parse_catalog(r#"<div class="emoticon-list"><a href="/e/54950?p=1"><video data-src="//ac.arca.live/thumbnail.mp4"></video><div class="title">실비아 정실력측정</div></a></div>"#).unwrap();
     assert_eq!(packs[0].thumbnail, "https://ac.arca.live/thumbnail.mp4");
 }
+
+#[test]
+fn arca_catalog_uses_sticker_media_instead_of_rating_badges() {
+    for media in [
+        r#"<img loading="lazy" src="//ac.arca.live/sticker.png">"#,
+        r#"<video data-src="//ac.arca.live/sticker.mp4"></video>"#,
+    ] {
+        let html = format!(
+            r#"<div class="emoticon-list"><a href="/e/54566?p=1"><div class="emoticon"><span class="stars"><img alt="Star" src="/static/assets/images/star-yellow.svg?t=1"></span>{media}<div class="title">Pack</div></div></a></div>"#
+        );
+        let packs = arca::parse_catalog(&html).unwrap();
+        assert!(
+            packs[0]
+                .thumbnail
+                .starts_with("https://ac.arca.live/sticker."),
+            "{}",
+            packs[0].thumbnail
+        );
+    }
+}

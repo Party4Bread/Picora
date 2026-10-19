@@ -386,10 +386,34 @@ impl App {
         ui.strong("DCInside");
         ui.label("Public packs can be browsed without signing in.");
         ui.add_space(24.);
-        ui.strong("Arca");
+        let account = self.services.account_status.lock().unwrap().clone();
+        ui.horizontal_wrapped(|ui| {
+            ui.strong("Arca");
+            let label = if self.login_busy && !account.checking {
+                "Waiting for sign-in…"
+            } else {
+                account.label()
+            };
+            ui.label(RichText::new(label).color(if account.detail.is_some() {
+                ui.visuals().error_fg_color
+            } else {
+                ui.visuals().text_color()
+            }));
+        });
+        if account.verified {
+            ui.label("Catalog access verified.");
+        }
+        if let Some(error) = &account.detail {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+            ui.label("Check your connection, or sign in again to complete website verification.");
+        }
+        if let Some(error) = &account.storage_error {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+            ui.label("You can use this session until Picora quits.");
+        }
         ui.label("Sign in on Arca’s own website. When you are done, close the login window to connect the session.");
         ui.label("Picora saves session cookies using OS-protected storage (Windows account encryption on Windows). Your password stays on the website.");
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .add_enabled(!self.login_busy, egui::Button::new("Sign in / reconnect"))
                 .clicked()
@@ -399,7 +423,20 @@ impl App {
                 self.services.login();
             }
             if ui
-                .add_enabled(!self.login_busy, egui::Button::new("Sign out"))
+                .add_enabled(
+                    !self.login_busy && account.has_session,
+                    egui::Button::new("Check connection"),
+                )
+                .clicked()
+            {
+                self.login_busy = true;
+                self.services.check_arca();
+            }
+            if ui
+                .add_enabled(
+                    !self.login_busy && (account.has_session || account.saved),
+                    egui::Button::new("Sign out"),
+                )
                 .clicked()
             {
                 let r = self.services.logout();

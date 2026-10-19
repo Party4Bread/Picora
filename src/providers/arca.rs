@@ -48,7 +48,15 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
         if reference.provider != Provider::Arca || !found.insert(reference.key()) {
             continue;
         }
-        let image = node.select(&Selector::parse("img, video").unwrap()).next();
+        // Rating badges are nested before the sticker image in live cards.
+        // Select the card's direct media, not the first descendant image.
+        let image = node
+            .select(&Selector::parse(".emoticon > img, .emoticon > video").unwrap())
+            .next()
+            .or_else(|| {
+                node.select(&Selector::parse(":scope > img, :scope > video").unwrap())
+                    .next()
+            });
         let title = node
             .select(&Selector::parse(".title, .name, .emoticon-title").unwrap())
             .next()
