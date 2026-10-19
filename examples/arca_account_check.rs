@@ -26,5 +26,10 @@ async fn main() -> anyhow::Result<()> {
         catalog.len(),
         found.len()
     );
+    for pack in &catalog {
+        let bytes = repo.bytes(&pack.thumbnail).await?;
+        picora::media::decode(&bytes)?;
+    }
+    println!("Decoded all {} catalog thumbnails", catalog.len());
     Ok(())
 }
