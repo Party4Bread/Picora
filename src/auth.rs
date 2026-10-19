@@ -142,6 +142,11 @@ pub fn helper() -> Result<()> {
 }
 
 fn allowed_login_navigation(raw: &str) -> bool {
+    // Turnstile uses empty/srcdoc subframes as well as its HTTPS frame.
+    // https://developers.cloudflare.com/turnstile/get-started/mobile-implementation/
+    if matches!(raw, "about:blank" | "about:srcdoc") {
+        return true;
+    }
     url::Url::parse(raw).is_ok_and(|u| {
         u.scheme() == "https"
             && u.username().is_empty()
@@ -162,6 +167,8 @@ mod navigation_tests {
     #[test]
     fn arca_login_can_load_cloudflare_challenge_frame() {
         assert!(allowed_login_navigation("https://arca.live/u/login"));
+        assert!(allowed_login_navigation("about:blank"));
+        assert!(allowed_login_navigation("about:srcdoc"));
         assert!(allowed_login_navigation(
             "https://challenges.cloudflare.com/turnstile/v0/api.js"
         ));
@@ -178,6 +185,9 @@ mod navigation_tests {
             "https://arca.live@evil.example/",
             "https://www.google.com/",
             "file:///etc/passwd",
+            "about:config",
+            "about:blank.evil",
+            "javascript:alert(1)",
         ] {
             assert!(!allowed_login_navigation(url), "{url}");
         }
