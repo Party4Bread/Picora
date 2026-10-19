@@ -1,3 +1,4 @@
+pub mod account;
 use crate::{
     media::{Asset, Decoded, MediaCache},
     model::{LibrarySticker, Pack, PackRef, Provider},
@@ -53,6 +54,7 @@ pub struct Services {
     semaphore: Arc<Semaphore>,
     decode_slots: Arc<Semaphore>,
     clipboard: ClipboardService,
+    pub account_status: Arc<Mutex<account::AccountStatus>>,
     cancellation: crate::platform::paste::Cancellation,
     #[cfg(target_os = "linux")]
     pub wayland: Arc<Mutex<Option<crate::platform::wayland::Wayland>>>,
@@ -62,8 +64,22 @@ pub struct Services {
 impl Services {
     pub fn new(runtime: tokio::runtime::Handle, cache: MediaCache, bus: Bus) -> Result<Self> {
         let arca = Repository::new(Provider::Arca)?;
-        if let Ok(c) = crate::auth::load() {
-            arca.set_cookies(&c);
+        let mut account_status = account::AccountStatus::default();
+        match crate::auth::load() {
+            Ok(c) if !c.is_empty() => {
+                arca.set_cookies(&c);
+                account_status.has_session = true;
+                account_status.saved = true;
+            }
+            Ok(_) => (),
+            Err(e)
+                if matches!(
+                    e.downcast_ref::<keyring::Error>(),
+                    Some(keyring::Error::NoEntry)
+                ) => {}
+            Err(e) => {
+                account_status.detail = Some(format!("Could not load the saved session: {e:#}"))
+            }
         }
         Ok(Self {
             runtime,
@@ -73,6 +89,7 @@ impl Services {
             semaphore: Arc::new(Semaphore::new(4)),
             decode_slots: Arc::new(Semaphore::new(2)),
             clipboard: ClipboardService::default(),
+            account_status: Arc::new(Mutex::new(account_status)),
             cancellation: Default::default(),
             #[cfg(target_os = "linux")]
             wayland: Arc::new(Mutex::new(None)),
@@ -212,22 +229,66 @@ impl Services {
                 s.repos.lock().unwrap()[1] = repo.clone();
                 let persisted =
                     tokio::task::spawn_blocking(move || crate::auth::save(&cookies)).await?;
-                let storage = match persisted {
-                    Ok(()) => "Session saved securely for your OS account.".to_owned(),
-                    Err(e) => format!("Session is memory-only: could not save securely ({e:#})."),
+                let saved = persisted.is_ok();
+                let storage_error = persisted
+                    .err()
+                    .map(|e| format!("Could not save the session: {e:#}"));
+                *s.account_status.lock().unwrap() = account::AccountStatus {
+                    has_session: true,
+                    saved,
+                    checking: true,
+                    storage_error,
+                    ..Default::default()
                 };
-                match repo.browse("", 1).await {
-                    Ok(_) => Ok(format!("Arca connected. {storage}")),
-                    Err(e) => Ok(format!("Session received. {storage} Catalog check: {e}")),
-                }
+                s.bus.ctx.request_repaint();
+                let check = repo
+                    .browse("", 1)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| format!("{e:#}"));
+                s.account_status.lock().unwrap().finish_check(check);
+                Ok(s.account_status.lock().unwrap().label().to_owned())
             }
             .await;
+            if let Err(e) = &result {
+                s.account_status
+                    .lock()
+                    .unwrap()
+                    .finish_check(Err(format!("{e:#}")));
+            }
             s.bus.send(Event::Login(result));
+        });
+    }
+    pub fn check_arca(&self) {
+        self.account_status.lock().unwrap().checking = true;
+        let s = self.clone();
+        self.runtime.spawn(async move {
+            let result = s
+                .repo(Provider::Arca)
+                .browse("", 1)
+                .await
+                .map(|_| ())
+                .map_err(|e| format!("{e:#}"));
+            let message = {
+                let mut status = s.account_status.lock().unwrap();
+                status.finish_check(result);
+                status.label().to_owned()
+            };
+            s.bus.send(Event::Login(Ok(message)));
         });
     }
     pub fn logout(&self) -> Result<()> {
         self.repos.lock().unwrap()[1] = Repository::new(Provider::Arca)?;
-        crate::auth::forget()
+        let result = crate::auth::forget();
+        let mut status = self.account_status.lock().unwrap();
+        *status = account::AccountStatus::default();
+        if let Err(e) = &result {
+            status.saved = true;
+            status.detail = Some(format!(
+                "Disconnected locally, but the saved session could not be removed: {e:#}. Try Sign out again."
+            ));
+        }
+        result
     }
     #[cfg(target_os = "linux")]
     pub fn enable_wayland(&self, automatic: bool) {
