@@ -34,11 +34,20 @@ pub fn forget() -> Result<()> {
 }
 pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
     use tokio::io::AsyncWriteExt;
-    let mut child = tokio::process::Command::new(std::env::current_exe()?)
+    let mut command = tokio::process::Command::new(std::env::current_exe()?);
+    #[cfg(target_os = "linux")]
+    {
+        // Match the main UI's XWayland requirement. WebKit's DMA-BUF path
+        // can crash with a Wayland protocol error or render a blank login
+        // window on Plasma; use its fallback renderer for this helper only.
+        command.env("GDK_BACKEND", "x11");
+        command.env("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+    let mut child = command
         .arg("--auth-helper")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
         .kill_on_drop(true)
         .spawn()?;
     let mut stdin = child.stdin.take().context("Login pipe unavailable")?;
@@ -52,7 +61,8 @@ pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
     .context("Login timed out")??;
     ensure!(
         result.status.success(),
-        "Login window could not start. Check WebView2/WebKitGTK installation."
+        "Arca sign-in window exited unexpectedly ({}). Its diagnostic output is available in Picora’s process log.",
+        result.status
     );
     ensure!(
         result.stdout.len() < 1024 * 1024,
