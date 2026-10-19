@@ -1,6 +1,6 @@
 [package]
 name = "picora"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 description = "A cross-platform sticker picker for DCInside and Arca"
 
