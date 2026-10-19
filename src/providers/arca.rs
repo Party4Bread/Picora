@@ -6,13 +6,18 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 pub async fn browse(repo: &Repository, query: &str, page: u32) -> Result<Vec<Pack>> {
+    parse_catalog(&repo.text(catalog_url(query, page)?).await?)
+}
+fn catalog_url(query: &str, page: u32) -> Result<Url> {
     let mut url = Url::parse("https://arca.live/e/")?;
     url.query_pairs_mut()
-        .append_pair("page", &page.max(1).to_string());
+        .append_pair("p", &page.max(1).to_string());
     if !query.trim().is_empty() {
-        url.query_pairs_mut().append_pair("q", query.trim());
+        url.query_pairs_mut()
+            .append_pair("target", "title")
+            .append_pair("keyword", query.trim());
     }
-    parse_catalog(&repo.text(url).await?)
+    Ok(url)
 }
 fn check_access(html: &str) -> Result<()> {
     let doc = Html::parse_document(html);
@@ -149,4 +154,28 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
         thumbnail: stickers[0].url.clone(),
         stickers,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn search_uses_arca_form_fields_and_preserves_korean_text() {
+        let url = catalog_url("  고양이 & 강아지+ #1  ", 2).unwrap();
+        let pairs: std::collections::HashMap<_, _> = url.query_pairs().collect();
+        assert_eq!(
+            pairs.get("keyword").map(|s| s.as_ref()),
+            Some("고양이 & 강아지+ #1")
+        );
+        assert_eq!(pairs.get("target").map(|s| s.as_ref()), Some("title"));
+        assert_eq!(pairs.get("p").map(|s| s.as_ref()), Some("2"));
+        assert_eq!(pairs.len(), 3);
+        assert!(url.fragment().is_none());
+    }
+    #[test]
+    fn empty_search_is_unfiltered_and_pages_are_one_based() {
+        let url = catalog_url(" ", 0).unwrap();
+        assert_eq!(url.query(), Some("p=1"));
+        assert_eq!(catalog_url("", 3).unwrap().query(), Some("p=3"));
+    }
 }
