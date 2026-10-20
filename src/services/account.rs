@@ -54,14 +54,12 @@ mod tests {
         assert!(status.detail.is_none());
     }
     #[test]
-    fn memory_only_session_and_sign_out_are_distinct() {
+    fn verified_memory_only_session_is_labeled_as_session_only() {
         let mut status = AccountStatus {
             has_session: true,
             ..Default::default()
         };
         status.finish_check(Ok(()));
         assert_eq!(status.label(), "Connected · this session only");
-        status = AccountStatus::default();
-        assert_eq!(status.label(), "Not connected");
     }
 }

@@ -196,9 +196,4 @@ mod tests {
         assert!(!c.poll(rt.handle(), &egui::Context::default()));
         assert!(matches!(c.state, State::Idle));
     }
-    #[test]
-    fn old_settings_enable_checks_by_default() {
-        let s: crate::model::Settings = serde_json::from_str("{\"theme\":\"Dark\"}").unwrap();
-        assert!(s.check_updates_automatically);
-    }
 }

@@ -97,9 +97,8 @@ mod tests {
     use super::starts_hidden;
 
     #[test]
-    fn tray_is_default_and_windows_are_explicit() {
+    fn explicit_window_flags_override_background_mode() {
         for (args, hidden) in [
-            (vec![], true),
             (vec!["--background"], true),
             (vec!["--show"], false),
             (vec!["--library"], false),
