@@ -2,6 +2,10 @@ pub mod autostart;
 pub mod clipboard;
 pub mod focus;
 pub mod instance;
+#[cfg(target_os = "macos")]
+pub mod macos_keyboard;
+#[cfg(target_os = "macos")]
+pub mod macos_permissions;
 pub mod paste;
 pub mod shortcut;
 #[cfg(target_os = "linux")]

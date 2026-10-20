@@ -52,6 +52,7 @@ wl-clipboard-rs = "0.9.4"
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading", "Win32_Storage_FileSystem"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSRunningApplication", "NSWorkspace"] }
 

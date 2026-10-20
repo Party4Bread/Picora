@@ -446,6 +446,11 @@ impl App {
     }
     pub(super) fn settings_ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Settings");
+        #[cfg(target_os = "macos")]
+        {
+            self.macos_permissions_ui(ui, platform::macos_permissions::accessibility_allowed());
+            ui.add_space(16.);
+        }
         self.updates_ui(ui);
         ui.add_space(16.);
         ui.strong("Global shortcut");
@@ -528,6 +533,45 @@ impl App {
         ui.add_space(16.);
         if ui.button("Quit Picora").clicked() {
             self.quit = true;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn macos_permissions_ui(&mut self, ui: &mut egui::Ui, allowed: bool) {
+        ui.add_space(12.);
+        ui.strong("Automatic paste on macOS");
+        ui.label(if allowed {
+            "Allowed — automatic paste has Accessibility access."
+        } else {
+            "Permission needed for automatic paste. Copying stickers works without it."
+        });
+        ui.label("Enable the copy of Picora you are running. Moving or updating the app may require granting access again.");
+        ui.horizontal_wrapped(|ui| {
+            if !allowed && ui.button("Allow automatic paste…").clicked() {
+                platform::macos_permissions::request_accessibility();
+                self.services.cancel_paste();
+                self.paste_at = None;
+                self.message("Enable Picora in System Settings → Privacy & Security → Accessibility, then return here. Choose the sticker again after granting access.", false);
+                if let Err(error) = platform::macos_permissions::open_settings() {
+                    self.message(format!("Could not open System Settings: {error}. Open Privacy & Security → Accessibility manually."), true);
+                }
+            }
+            if ui.button("Open Accessibility settings").clicked()
+                && let Err(error) = platform::macos_permissions::open_settings() {
+                self.message(format!("Could not open System Settings: {error}. Open Privacy & Security → Accessibility manually."), true);
+            }
+            if ui.button("Check permission again").clicked() {
+                self.services.cancel_paste();
+                self.paste_at = None;
+                self.message(if platform::macos_permissions::accessibility_allowed() {
+                    "Accessibility is allowed. Return to your editor and choose the sticker again."
+                } else {
+                    "Accessibility is still unavailable. Enable this copy of Picora; if it is already enabled, quit and reopen Picora, then check again. You can still paste manually with Cmd+V."
+                }, false);
+            }
+        });
+        if !allowed {
+            ui.label("Running from source? macOS may list the terminal or launcher instead.");
         }
     }
 }

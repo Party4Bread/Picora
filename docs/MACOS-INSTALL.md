@@ -4,6 +4,12 @@ The macOS download is for Apple Silicon (M-series) Macs. Intel Macs are not supp
 
 Open the `.dmg` and drag **Picora.app** to **Applications**, then eject the disk image and open Picora from Applications. The ZIP is also available: extract it and move `Picora/Picora.app` to Applications. Picora runs as a menu-bar utility; it does not keep a Dock icon. Use its menu-bar menu to open the library.
 
+## Automatic paste
+
+In Picora, open **Settings → Automatic paste on macOS → Allow automatic paste…**. Enable **Picora** in **System Settings → Privacy & Security → Accessibility**, return to Picora and choose **Check permission again**. Select the sticker again. If access is still unavailable, restart Picora.
+
+If no image appears, focus the editor and press **Cmd+V**, or try **Copy still image**.
+
 ## Current signing limitation
 
 Current builds are ad-hoc signed for bundle integrity, but are **not Developer ID signed or notarized by Apple**. A DMG is an installation convenience; it does not bypass Gatekeeper. macOS may block a downloaded build. Do not disable Gatekeeper globally. See Apple's guidance for opening apps from unidentified developers: https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac

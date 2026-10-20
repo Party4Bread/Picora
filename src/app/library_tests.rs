@@ -1,4 +1,44 @@
 use super::*;
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_permission_failure_opens_setup_and_cancels_stale_paste() {
+    let temp = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(temp.path().to_owned(), runtime.handle().clone(), &ctx);
+    app.library_open = false;
+    let ticket = app.services.paste_ticket();
+    app.paste_at = Some((Instant::now() + Duration::from_secs(60), Target(0), None));
+    app.services.bus.send(Event::Pasted(Err(
+        platform::macos_permissions::AccessibilityRequired.into(),
+    )));
+    app.handle_events(&ctx);
+    assert!(app.library_open);
+    assert!(app.tab == Tab::Settings);
+    assert!(app.error);
+    assert!(app.status.contains("Cmd+V"));
+    assert!(app.paste_at.is_none());
+    assert!(!ticket.valid());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_permission_panel_distinguishes_allowed_and_denied_without_prompting() {
+    let temp = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(temp.path().to_owned(), runtime.handle().clone(), &ctx);
+    for allowed in [false, true] {
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| app.macos_permissions_ui(ui, allowed));
+        });
+        assert_eq!(label(&output, "Allow automatic paste…").is_some(), !allowed);
+        assert!(label(&output, "Check permission again").is_some());
+        assert!(label(&output, "Open Accessibility settings").is_some());
+    }
+}
+
 fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) -> App {
     design::configure(ctx);
     #[cfg(target_os = "linux")]

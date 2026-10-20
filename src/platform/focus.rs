@@ -120,23 +120,68 @@ pub fn may_restore(current: Option<u64>, target: u64, picker: Option<u64>) -> bo
     current.is_none() || current == Some(target) || current == picker
 }
 pub fn paste(target: Target, picker: Option<Target>, ticket: super::paste::Ticket) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    anyhow::ensure!(
+        objc2::MainThreadMarker::new().is_some(),
+        "macOS paste must run on the main thread"
+    );
+    prepare_paste(target, picker, &ticket)?;
+    send_paste(target, ticket)
+}
+
+pub fn prepare_paste(
+    target: Target,
+    picker: Option<Target>,
+    ticket: &super::paste::Ticket,
+) -> Result<()> {
     anyhow::ensure!(
         ticket.valid() && may_restore(capture().map(|t| t.0), target.0, picker.map(|t| t.0)),
         "Focus changed; paste manually"
     );
     restore(target)?;
     std::thread::sleep(std::time::Duration::from_millis(120));
+    Ok(())
+}
+
+pub fn send_paste(target: Target, ticket: super::paste::Ticket) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    anyhow::ensure!(
+        objc2::MainThreadMarker::new().is_some(),
+        "macOS paste must run on the main thread"
+    );
     if !ticket.valid() || capture().map(|t| t.0) != Some(target.0) {
         bail!("Focus changed; paste manually");
     }
-    let mut input = Enigo::new(&Settings::default())
-        .map_err(|e| anyhow::anyhow!("Input permission required: {e}"))?;
+    #[cfg(target_os = "macos")]
+    if !super::macos_permissions::accessibility_allowed() {
+        return Err(super::macos_permissions::AccessibilityRequired.into());
+    }
+    let settings = Settings {
+        // Consent is requested from visible setup controls, never after hiding
+        // the picker. A failed paste must not repeatedly open OS dialogs.
+        #[cfg(target_os = "macos")]
+        open_prompt_to_get_permissions: false,
+        ..Default::default()
+    };
+    let mut input = Enigo::new(&settings).map_err(|e| {
+        #[cfg(target_os = "macos")]
+        if matches!(e, enigo::NewConError::NoPermission) {
+            return anyhow::Error::from(super::macos_permissions::AccessibilityRequired);
+        }
+        anyhow::anyhow!("Input permission required: {e}")
+    })?;
     let modifier = if cfg!(target_os = "macos") {
         Key::Meta
     } else {
         Key::Control
     };
+    // Resolve before holding Command so lookup failure cannot leave it pressed.
+    #[cfg(target_os = "macos")]
+    let paste_keycode = super::macos_keyboard::paste_keycode()?;
     input.key(modifier, Direction::Press)?;
+    #[cfg(target_os = "macos")]
+    let result = input.raw(paste_keycode, Direction::Click);
+    #[cfg(not(target_os = "macos"))]
     let result = input.key(Key::Unicode('v'), Direction::Click);
     let release = input.key(modifier, Direction::Release);
     result?;

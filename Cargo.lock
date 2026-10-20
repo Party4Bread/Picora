@@ -3902,6 +3902,7 @@ dependencies = [
  "ashpd",
  "async-trait",
  "clipboard-rs",
+ "core-foundation 0.10.1",
  "directories",
  "eframe",
  "egui_extras",
