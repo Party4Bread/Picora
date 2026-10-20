@@ -37,7 +37,16 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
     let doc = Html::parse_document(html);
     let mut found = HashSet::new();
     let mut packs = Vec::new();
-    for node in doc.select(&Selector::parse("a[href]").unwrap()) {
+    for node in doc.select(&Selector::parse(".emoticon-list a[href]").unwrap()) {
+        // Arca repeats a popular-pack ranking above every query and page.
+        // Exclude it before deduplication: a ranked pack can also be a real match.
+        if node
+            .ancestors()
+            .filter_map(scraper::ElementRef::wrap)
+            .any(|parent| parent.value().classes().any(|class| class == "rank-list"))
+        {
+            continue;
+        }
         let href = node.value().attr("href").unwrap_or_default();
         let Ok(url) = Url::parse("https://arca.live/").unwrap().join(href) else {
             continue;
@@ -85,6 +94,10 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
     }
     ensure!(
         !packs.is_empty()
+            || doc
+                .select(&Selector::parse(".emoticon-list > .row:not(.rank-list)").unwrap())
+                .next()
+                .is_some()
             || (doc
                 .select(&Selector::parse(".emoticon-list, .emoticon-store").unwrap())
                 .next()

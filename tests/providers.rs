@@ -102,3 +102,33 @@ fn arca_catalog_uses_sticker_media_instead_of_rating_badges() {
         );
     }
 }
+
+#[test]
+fn arca_search_excludes_ranked_packs_without_losing_matching_duplicates() {
+    let html = r#"
+    <a href="/e/999"><img src="//ac.arca.live/navigation.png"></a>
+    <div class="emoticon-list"><div class="row rank-list">
+      <a href="/e/1"><img src="//ac.arca.live/popular.png"><span class="title">Popular</span></a>
+      <a href="/e/2"><img src="//ac.arca.live/match.png"><span class="title">Match</span></a>
+    </div></div>
+    <div class="emoticon-list"><div class="row">
+      <a href="/e/3"><img src="//ac.arca.live/first.png"><span class="title">First match</span></a>
+      <a href="/e/2"><img src="//ac.arca.live/match.png"><span class="title">Match</span></a>
+    </div></div>"#;
+    let packs = arca::parse_catalog(html).unwrap();
+    assert_eq!(
+        packs
+            .iter()
+            .map(|p| p.reference.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["3", "2"]
+    );
+}
+
+#[test]
+fn arca_empty_search_does_not_return_popular_packs() {
+    let ranking = r#"<div class="emoticon-list"><div class="row rank-list"><a href="/e/1"><img src="//ac.arca.live/popular.png"></a></div></div>"#;
+    let html = format!("{ranking}<div class='emoticon-list'><div class='row'></div></div>");
+    assert!(arca::parse_catalog(&html).unwrap().is_empty());
+    assert!(arca::parse_catalog(ranking).is_err());
+}
