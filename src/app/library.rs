@@ -388,7 +388,7 @@ impl App {
         ui.add_space(24.);
         let account = self.services.account_status.lock().unwrap().clone();
         ui.horizontal_wrapped(|ui| {
-            ui.strong("Arca");
+            ui.strong("arca.live");
             let label = if self.login_busy && !account.checking {
                 "Waiting for sign-in…"
             } else {
@@ -411,7 +411,7 @@ impl App {
             ui.colored_label(ui.visuals().error_fg_color, error);
             ui.label("You can use this session until Picora quits.");
         }
-        ui.label("Sign in on Arca’s own website. When you are done, close the login window to connect the session.");
+        ui.label("Sign in on arca.live’s own website. When you are done, close the login window to connect the session.");
         ui.label("Picora saves session cookies using OS-protected storage (Windows account encryption on Windows). Your password stays on the website.");
         ui.horizontal_wrapped(|ui| {
             if ui
@@ -419,7 +419,10 @@ impl App {
                 .clicked()
             {
                 self.login_busy = true;
-                self.message("Complete sign-in in the Arca window, then close it", false);
+                self.message(
+                    "Complete sign-in in the arca.live window, then close it",
+                    false,
+                );
                 self.services.login();
             }
             if ui
@@ -440,7 +443,7 @@ impl App {
                 .clicked()
             {
                 let r = self.services.logout();
-                self.report(r, "Arca session removed");
+                self.report(r, "arca.live session removed");
             }
         });
     }

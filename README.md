@@ -17,6 +17,15 @@ Like the Windows emoji panel, Picora opens with a shortcut: **Ctrl+Shift+Space**
 - **Work from the keyboard:** configurable global shortcut and arrow-key navigation, with light and dark themes.
 - **Update in the app:** install GitHub releases from **Settings → Updates** while preserving your library.
 
+## Supported sticker repositories
+
+These are Picora’s currently supported sources. Your stickers are organized together in one library.
+
+| Repository | Browse and import | Sign-in |
+| --- | --- | --- |
+| [DCInside](https://dccon.dcinside.com/) | Search packs or import by pack URL | Not required |
+| [arca.live](https://arca.live/e/) | Search packs or import by pack URL | Required; website verification may be requested |
+
 ## Download and install
 
 | Platform | Release asset | Install |
@@ -127,7 +136,7 @@ cargo test --locked --test windows_viewports -- --ignored --nocapture
 python scripts/smoke_wayland_clipboard.py
 ```
 
-The Arca check uses your saved session. Windows viewport tests need an interactive desktop; the Wayland script requires headless KWin. For macOS browser clipboard checks, build `cargo build --locked --example clipboard_fixture` and follow the instructions in [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py).
+The arca.live check uses your saved session. Windows viewport tests need an interactive desktop; the Wayland script requires headless KWin. For macOS browser clipboard checks, build `cargo build --locked --example clipboard_fixture` and follow the instructions in [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py).
 
 Packaging and installer scripts are used by CI. `test_update_manifest.py` validates release metadata; `tests/update_process.rs` runs updater replacement and recovery scenarios as part of `cargo test`. Platform smoke scripts cover desktop behavior that headless CI cannot exercise. See [release and recovery documentation](docs/UPDATES.md).
 

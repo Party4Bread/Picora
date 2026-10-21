@@ -27,7 +27,7 @@ impl fmt::Display for Provider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Dcinside => "DCInside",
-            Self::Arca => "Arca",
+            Self::Arca => "arca.live",
         })
     }
 }
@@ -68,7 +68,7 @@ impl PackRef {
                     .unwrap_or_default()
                     .trim_end_matches('/'),
             ),
-            _ => bail!("Use a DCInside or Arca sticker pack URL"),
+            _ => bail!("Use a DCInside or arca.live sticker pack URL"),
         };
         ensure!(
             !id.is_empty() && id.len() <= 20 && id.bytes().all(|b| b.is_ascii_digit()),

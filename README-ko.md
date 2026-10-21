@@ -17,6 +17,15 @@ Windows 이모지 패널처럼 **Ctrl+Shift+Space**로 Picora를 열 수 있습�
 - **키보드 조작:** 전역 단축키 변경과 방향키 탐색을 지원하며, 밝은 테마와 어두운 테마를 제공합니다.
 - **앱 내 업데이트:** **Settings → Updates**에서 라이브러리를 유지한 채 GitHub 릴리스를 설치합니다.
 
+## 지원하는 스티커 저장소
+
+현재 Picora에서 지원하는 저장소입니다. 가져온 스티커는 하나의 라이브러리에서 함께 정리할 수 있습니다.
+
+| 저장소 | 탐색 및 가져오기 | 로그인 |
+| --- | --- | --- |
+| [디시인사이드](https://dccon.dcinside.com/) | 팩 검색 또는 팩 URL로 가져오기 | 필요 없음 |
+| [아카라이브(arca.live)](https://arca.live/e/) | 팩 검색 또는 팩 URL로 가져오기 | 필요하며, 웹사이트 인증이 표시될 수 있음 |
+
 ## 다운로드 및 설치
 
 | 플랫폼 | 다운로드 파일 | 설치 방법 |
@@ -127,7 +136,7 @@ cargo test --locked --test windows_viewports -- --ignored --nocapture
 python scripts/smoke_wayland_clipboard.py
 ```
 
-Arca 검증은 저장된 세션을 사용합니다. Windows 창 테스트에는 대화형 데스크톱이 필요하고, Wayland 스크립트에는 화면 없이 실행하는 KWin이 필요합니다. macOS 브라우저 클립보드를 검증하려면 `cargo build --locked --example clipboard_fixture`로 빌드한 뒤 [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py)의 안내를 따르세요.
+아카라이브(arca.live) 검증은 저장된 세션을 사용합니다. Windows 창 테스트에는 대화형 데스크톱이 필요하고, Wayland 스크립트에는 화면 없이 실행하는 KWin이 필요합니다. macOS 브라우저 클립보드를 검증하려면 `cargo build --locked --example clipboard_fixture`로 빌드한 뒤 [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py)의 안내를 따르세요.
 
 패키징과 설치 프로그램 스크립트는 CI에서 사용합니다. `test_update_manifest.py`는 릴리스 메타데이터를 검증하고, `tests/update_process.rs`는 `cargo test`의 일부로 업데이트 교체와 복구 시나리오를 실행합니다. 플랫폼별 검증 스크립트는 화면 없는 CI에서 확인할 수 없는 데스크톱 동작을 검사합니다. [릴리스와 복구 문서](docs/UPDATES.md)도 참고하세요.
 

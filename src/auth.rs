@@ -61,7 +61,7 @@ pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
     .context("Login timed out")??;
     ensure!(
         result.status.success(),
-        "Arca sign-in window exited unexpectedly ({}). Its diagnostic output is available in Picora’s process log.",
+        "arca.live sign-in window exited unexpectedly ({}). Its diagnostic output is available in Picora’s process log.",
         result.status
     );
     ensure!(
@@ -90,7 +90,7 @@ pub fn helper() -> Result<()> {
     let cookies: Vec<String> = serde_json::from_str(&input)?;
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_title("Picora · Sign in to Arca, then close this window")
+        .with_title("Picora · Sign in to arca.live, then close this window")
         .with_inner_size(tao::dpi::LogicalSize::new(900., 720.))
         .build(&event_loop)?;
     let builder = WebViewBuilder::new()
