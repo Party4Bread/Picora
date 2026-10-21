@@ -1,6 +1,4 @@
-use super::{
-    Action, App, Duration, Event, Instant, LibrarySticker, Result, Shortcut, Visual, egui,
-};
+use super::{App, Duration, Event, Instant, LibrarySticker, Result, Shortcut, Visual, egui};
 #[cfg(target_os = "macos")]
 use super::{Tab, focus, platform};
 impl App {
@@ -13,27 +11,34 @@ impl App {
                 return;
             }
         };
-        let recent = self.store.record_recent(&item.pack_key, &item.sticker.id);
-        if let Some(mut pending) = self.pending.take() {
-            if !pending.interaction.valid() || ctx.input(|i| i.modifiers.any()) {
-                pending.flow.cancel_auto();
-            }
-            if pending.flow.copied().is_ok() {
-                if pending.from_picker && pending.interaction.valid() {
-                    self.set_picker_hidden(ctx);
-                }
-                if matches!(pending.flow.hidden(), Ok(Action::Paste)) {
-                    if let Some(target) = pending.target {
-                        self.paste_at = Some((
-                            Instant::now() + Duration::from_millis(180),
-                            target,
-                            pending.picker,
-                        ));
-                        ctx.request_repaint_after(Duration::from_millis(180));
-                    }
+        let recent = self
+            .store
+            .is_sticker_favorite(&item.pack_key, &item.sticker.id)
+            .and_then(|saved| {
+                if saved.is_some() {
+                    self.store.record_recent(&item.pack_key, &item.sticker.id)
                 } else {
-                    self.message("Copied — paste with Ctrl+V / Cmd+V", false);
+                    Ok(())
                 }
+            });
+        if let Some(pending) = self.pending.take() {
+            let current = pending.interaction.valid();
+            if pending.from_picker && current {
+                self.set_picker_hidden(ctx);
+            }
+            if pending.auto_paste
+                && current
+                && !ctx.input(|i| i.modifiers.any())
+                && let Some(target) = pending.target
+            {
+                self.paste_at = Some((
+                    Instant::now() + Duration::from_millis(180),
+                    target,
+                    pending.picker,
+                ));
+                ctx.request_repaint_after(Duration::from_millis(180));
+            } else {
+                self.message("Copied — paste with Ctrl+V / Cmd+V", false);
             }
         }
         if let Err(error) = recent {
@@ -72,7 +77,7 @@ impl App {
             && p.from_picker
             && !ctx.input(|i| i.viewport().focused.unwrap_or(false))
         {
-            p.flow.cancel_auto();
+            p.auto_paste = false;
         }
         self.handle_activation(ctx);
         while let Ok(event) = self.rx.try_recv() {

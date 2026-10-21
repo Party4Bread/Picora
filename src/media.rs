@@ -86,8 +86,12 @@ fn limits() -> image::Limits {
     l.max_alloc = Some(64 * 1024 * 1024);
     l
 }
+/// Decodes a bounded preview, retaining source animation metadata even when only
+/// part of an animation fits. GIF/APNG/WebP previews stop at 120 frames or the
+/// decoded-memory budget; MP4 validation decodes within hard limits before truncation.
 /// # Errors
-/// Rejects unsupported, corrupt, or oversized media and animations exceeding the decoder limits.
+/// Rejects unsupported, corrupt, or oversized input and hard decoder-limit failures.
+/// Reaching a preview frame budget successfully returns the frames collected so far.
 pub fn decode(bytes: &[u8]) -> Result<Decoded> {
     ensure!(bytes.len() <= MAX_ASSET_BYTES, "Image is too large");
     if bytes.get(4..8) == Some(b"ftyp") {

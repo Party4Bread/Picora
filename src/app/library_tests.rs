@@ -48,13 +48,14 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
     let settings = Settings::default();
     let (tx, rx) = mpsc::channel();
     let (_, activation) = mpsc::channel();
-    let services = Services::new(
+    let services = Services::with_session(
         runtime,
         crate::media::MediaCache::new(root.join("media")).unwrap(),
         Bus {
             tx,
             ctx: ctx.clone(),
         },
+        Ok(Vec::new()),
     )
     .unwrap();
     App {
@@ -897,7 +898,16 @@ fn group_rendering_preserves_library_and_picker_queries() {
 
 #[test]
 fn copy_completion_respects_cancellation_modifiers_and_clipboard_failure() {
-    for case in ["success", "cancelled", "modifiers", "failure", "copy-only"] {
+    for case in [
+        "success",
+        "cancelled",
+        "modifiers",
+        "failure",
+        "copy-only",
+        "no-target",
+        "preview",
+        "blurred",
+    ] {
         let root = tempfile::tempdir().unwrap();
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -917,12 +927,15 @@ fn copy_completion_respects_cancellation_modifiers_and_clipboard_failure() {
         app.pending = Some(PendingPaste {
             interaction,
             picker: None,
-            target: Some(Target(42)),
+            target: (case != "no-target").then_some(Target(42)),
             from_picker: true,
-            flow: PasteFlow::new(case != "copy-only", true),
+            auto_paste: case != "copy-only",
         });
         if case == "cancelled" {
             app.open_library();
+        }
+        if case == "preview" {
+            app.store.remove_pack(&item.pack_key).unwrap();
         }
         app.services.bus.send(Event::Copied(if case == "failure" {
             Err(anyhow::anyhow!("clipboard unavailable"))
@@ -934,18 +947,25 @@ fn copy_completion_respects_cancellation_modifiers_and_clipboard_failure() {
             .viewports
             .get_mut(&egui::ViewportId::ROOT)
             .unwrap()
-            .focused = Some(true);
+            .focused = Some(case != "blurred");
         if case == "modifiers" {
             input.modifiers.shift = true;
         }
         let _ = ctx.run(input, |ctx| app.handle_events(ctx));
         assert!(app.pending.is_none(), "{case}");
-        assert_eq!(app.paste_at.is_some(), case == "success", "{case}");
+        assert_eq!(
+            app.paste_at.is_some(),
+            matches!(case, "success" | "preview"),
+            "{case}"
+        );
         assert_eq!(
             app.picker_open,
             matches!(case, "cancelled" | "failure"),
             "{case}"
         );
+        if case != "failure" {
+            assert!(!app.error, "{case}: {}", app.status);
+        }
         if case == "success" {
             app.open_library();
             assert!(

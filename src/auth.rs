@@ -128,9 +128,15 @@ pub fn helper() -> Result<()> {
             ..
         } = event
         {
-            let result: Vec<String> = view
-                .cookies()
-                .unwrap_or_default()
+            let cookies = match view.cookies() {
+                Ok(cookies) => cookies,
+                Err(error) => {
+                    eprintln!("Could not read sign-in cookies: {error}");
+                    *flow = ControlFlow::ExitWithCode(1);
+                    return;
+                }
+            };
+            let result: Vec<String> = cookies
                 .into_iter()
                 .filter(|c| {
                     c.domain().is_some_and(|d| {
@@ -139,11 +145,19 @@ pub fn helper() -> Result<()> {
                 })
                 .map(|c| c.to_string())
                 .collect();
-            if let Ok(bytes) = serde_json::to_vec(&result) {
-                let _ = std::io::stdout().write_all(&bytes);
-                let _ = std::io::stdout().flush();
-            }
-            *flow = ControlFlow::Exit;
+            let written = (|| -> Result<()> {
+                let bytes = serde_json::to_vec(&result)?;
+                std::io::stdout().write_all(&bytes)?;
+                std::io::stdout().flush()?;
+                Ok(())
+            })();
+            *flow = match written {
+                Ok(()) => ControlFlow::Exit,
+                Err(error) => {
+                    eprintln!("Could not return sign-in session: {error:#}");
+                    ControlFlow::ExitWithCode(1)
+                }
+            };
         }
     });
 }

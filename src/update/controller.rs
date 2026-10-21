@@ -27,6 +27,10 @@ enum Event {
     Staged(Result<(AvailableUpdate, tempfile::TempDir, StagedUpdate)>),
     Ready(Result<ReadyHelper>),
 }
+/// Update commands start background work; call [`Self::poll`] on UI updates to
+/// receive completion through [`Self::state`], including [`State::Error`]. Polling
+/// automatically hands a staged archive to the updater helper. Once handoff starts,
+/// cancellation is disabled so the installation cannot be interrupted halfway.
 pub struct Controller {
     pub state: State,
     pub previous_failure: Option<String>,
@@ -58,6 +62,7 @@ impl Controller {
             State::Checking | State::Downloading(..) | State::HandingOff
         )
     }
+    /// Starts a check unless another operation is busy; results arrive through `poll`.
     pub fn check(&mut self, runtime: &tokio::runtime::Handle, ctx: &egui::Context) {
         if self.busy() {
             return;
@@ -81,6 +86,7 @@ impl Controller {
             ctx.request_repaint();
         }));
     }
+    /// Starts a download only from `Available`; all other states ignore the request.
     pub fn download(&mut self, runtime: &tokio::runtime::Handle, ctx: &egui::Context) {
         let State::Available(update) = &self.state else {
             return;
@@ -119,6 +125,7 @@ impl Controller {
             ctx.request_repaint();
         }));
     }
+    /// Aborts work and invalidates queued events, returning to `Idle`. Ignored during handoff.
     pub fn cancel(&mut self) {
         if matches!(self.state, State::HandingOff) {
             return;
@@ -151,6 +158,8 @@ impl Controller {
         }));
     }
     /// Returns true only after a helper is ready for this process to exit.
+    /// Applies current-generation events and starts staged handoff. Returns true when
+    /// the helper is ready and the caller must exit to release the running installation.
     pub fn poll(&mut self, runtime: &tokio::runtime::Handle, ctx: &egui::Context) -> bool {
         while let Ok((id, event)) = self.rx.try_recv() {
             if id != self.generation {

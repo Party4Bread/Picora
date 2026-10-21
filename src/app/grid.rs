@@ -165,7 +165,7 @@ impl App {
             if ui.input(|i| i.key_pressed(egui::Key::Enter))
                 && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))))
             {
-                self.choose(
+                self.begin_sticker_copy(
                     items[self.picker_state.selected].clone(),
                     CopyMode::Auto,
                     true,
@@ -227,7 +227,7 @@ impl App {
                                     if picker {
                                         self.picker_state.selected = n;
                                     }
-                                    self.choose(item.clone(), CopyMode::Auto, picker);
+                                    self.begin_sticker_copy(item.clone(), CopyMode::Auto, picker);
                                 }
                                 r.response
                                     .context_menu(|ui| self.sticker_menu(ui, item, view));
@@ -240,11 +240,11 @@ impl App {
     }
     fn sticker_menu(&mut self, ui: &mut egui::Ui, item: &LibrarySticker, view: View) {
         if ui.button("Copy still image").clicked() {
-            self.choose(item.clone(), CopyMode::Still, false);
+            self.begin_sticker_copy(item.clone(), CopyMode::Still, false);
             ui.close();
         }
         if ui.button("Paste original file").clicked() {
-            self.choose(item.clone(), CopyMode::Original, view == View::Picker);
+            self.begin_sticker_copy(item.clone(), CopyMode::Original, view == View::Picker);
             ui.close();
         }
         ui.separator();

@@ -95,6 +95,11 @@ pub(crate) async fn read_response(mut response: reqwest::Response) -> Result<Vec
         }
         _ => {
             response.error_for_status_ref()?;
+            ensure!(
+                response.status().is_success(),
+                "Unexpected repository response: {}",
+                response.status()
+            );
         }
     }
     ensure!(
@@ -135,3 +140,6 @@ fn selector(css: &str) -> Result<scraper::Selector> {
     scraper::Selector::parse(css)
         .map_err(|error| anyhow::anyhow!("Invalid repository selector {css}: {error}"))
 }
+
+#[cfg(test)]
+mod tests;

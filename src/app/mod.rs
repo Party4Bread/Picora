@@ -11,7 +11,6 @@ use crate::{
     platform::{
         self,
         focus::{self, Target},
-        paste::{Action, PasteFlow},
         shortcut::Shortcut,
     },
     services::{Bus, Event, Services},
@@ -73,7 +72,7 @@ struct Visual {
 struct PendingPaste {
     interaction: platform::paste::Ticket,
     picker: Option<Target>,
-    flow: PasteFlow,
+    auto_paste: bool,
     target: Option<Target>,
     from_picker: bool,
 }
@@ -286,7 +285,7 @@ impl App {
         self.paste_at = None;
         self.services.cancel_paste();
         if let Some(pending) = &mut self.pending {
-            pending.flow.cancel_auto();
+            pending.auto_paste = false;
         }
     }
     fn show_picker(&mut self, ctx: &egui::Context) {
@@ -408,7 +407,7 @@ impl App {
             }
         }
     }
-    fn choose(&mut self, item: LibrarySticker, mode: CopyMode, from_picker: bool) {
+    fn begin_sticker_copy(&mut self, item: LibrarySticker, mode: CopyMode, from_picker: bool) {
         if matches!(
             self.updates.state,
             crate::update::controller::State::HandingOff
@@ -421,7 +420,7 @@ impl App {
         self.pending = Some(PendingPaste {
             interaction: self.services.paste_ticket(),
             picker: focus::capture(),
-            flow: PasteFlow::new(self.settings.auto_paste, target.is_some()),
+            auto_paste: self.settings.auto_paste,
             target,
             from_picker,
         });

@@ -191,15 +191,7 @@ impl App {
     }
     pub(super) fn library_content(&mut self, ui: &mut egui::Ui) {
         let title = self.collection_title(&self.library_state.filter);
-        let Some(items) = self.load_items(ui, View::Library) else {
-            return;
-        };
         ui.heading(&title);
-        ui.label(
-            RichText::new(format!("{} stickers", items.len()))
-                .small()
-                .weak(),
-        );
         ui.add_space(12.);
         ui.add_sized(
             [ui.available_width(), 36.],
@@ -244,6 +236,11 @@ impl App {
         );
         ui.add_space(8.);
         if let Some(items) = self.load_items(ui, View::Library) {
+            ui.label(
+                RichText::new(format!("{} stickers", items.len()))
+                    .small()
+                    .weak(),
+            );
             self.grid(ui, &items, View::Library);
         }
     }

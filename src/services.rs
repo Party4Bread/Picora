@@ -85,9 +85,17 @@ pub struct Services {
 }
 impl Services {
     pub fn new(runtime: tokio::runtime::Handle, cache: MediaCache, bus: Bus) -> Result<Self> {
+        Self::with_session(runtime, cache, bus, crate::auth::load())
+    }
+    pub(crate) fn with_session(
+        runtime: tokio::runtime::Handle,
+        cache: MediaCache,
+        bus: Bus,
+        session: Result<Vec<String>>,
+    ) -> Result<Self> {
         let arca = Repository::new(Provider::Arca)?;
         let mut account_status = account::AccountStatus::default();
-        match crate::auth::load() {
+        match session {
             Ok(c) if !c.is_empty() => {
                 arca.set_cookies(&c);
                 account_status.has_session = true;
@@ -195,16 +203,28 @@ impl Services {
                 let (asset, original) =
                     tokio::task::spawn_blocking(move || cache.prepare_copy(asset, mode)).await??;
                 #[cfg(target_os = "linux")]
-                {
+                let portal_error = {
                     let wayland = s.wayland.lock().unwrap().clone();
-                    if let Some(w) = wayland
-                        && w.copy(asset.clone(), original).await.is_ok()
-                    {
-                        return Ok(item);
+                    if let Some(w) = wayland {
+                        match w.copy(asset.clone(), original).await {
+                            Ok(()) => return Ok(item),
+                            Err(error) => Some(error),
+                        }
+                    } else {
+                        None
                     }
-                }
+                };
                 let clipboard = s.clipboard.clone();
-                tokio::task::spawn_blocking(move || clipboard.copy(&asset, original)).await??;
+                let fallback =
+                    tokio::task::spawn_blocking(move || clipboard.copy(&asset, original)).await?;
+                #[cfg(target_os = "linux")]
+                let fallback = match portal_error {
+                    Some(error) => {
+                        fallback.with_context(|| format!("Portal clipboard also failed: {error:#}"))
+                    }
+                    None => fallback,
+                };
+                fallback?;
                 Ok(item)
             }
             .await;
