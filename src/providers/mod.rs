@@ -9,7 +9,7 @@ use reqwest::{
 use std::{sync::Arc, time::Duration};
 use url::Url;
 
-pub const MAX_DOWNLOAD: usize = 25 * 1024 * 1024;
+use crate::media::MAX_ASSET_BYTES;
 #[derive(Clone)]
 pub struct Repository {
     pub(crate) client: Client,
@@ -93,13 +93,13 @@ pub(crate) async fn read_response(mut response: reqwest::Response) -> Result<Vec
         }
     }
     ensure!(
-        response.content_length().unwrap_or(0) <= MAX_DOWNLOAD as u64,
+        response.content_length().unwrap_or(0) <= MAX_ASSET_BYTES as u64,
         "Download exceeds 25 MiB"
     );
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await? {
         ensure!(
-            bytes.len() + chunk.len() <= MAX_DOWNLOAD,
+            bytes.len() + chunk.len() <= MAX_ASSET_BYTES,
             "Download exceeds 25 MiB"
         );
         bytes.extend_from_slice(&chunk);

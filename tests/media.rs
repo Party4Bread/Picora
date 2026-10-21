@@ -272,3 +272,21 @@ fn still_preview_does_not_read_or_decode_the_original_animation() {
     assert!(decoded.frames[0].width <= 160);
     assert!(picora::media::preview_asset(&asset, true).is_err());
 }
+
+#[test]
+fn validated_legacy_cache_survives_metadata_write_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = MediaCache::new(dir.path().to_owned()).unwrap();
+    let asset = cache
+        .save("legacy", include_bytes!("fixtures/animation.mp4"))
+        .unwrap();
+    let metadata = asset.original.with_file_name("metadata.json");
+    std::fs::remove_file(&metadata).unwrap();
+    std::fs::create_dir(&metadata).unwrap();
+    let cached = cache
+        .cached("legacy")
+        .unwrap()
+        .expect("validated asset remains available");
+    assert!(cached.animated);
+    assert_eq!(cached.original, asset.original);
+}
