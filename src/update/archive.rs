@@ -102,6 +102,8 @@ fn extract(path: &Path, target: Target, destination: &Path) -> Result<StagedUpda
 }
 
 fn validate_inventory(destination: &Path, target: Target, files: &[PathBuf]) -> Result<()> {
+    #[cfg(not(unix))]
+    let _ = destination;
     let executable = match target {
         Target::WindowsX86_64 => "picora.exe",
         Target::LinuxX86_64 => "picora",

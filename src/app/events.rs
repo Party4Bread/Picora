@@ -85,6 +85,8 @@ impl App {
                 Event::UpdateHealthFailed(error) => { self.message(error, true); self.quit = true; },
                 #[cfg(target_os = "linux")]
                 Event::Show => self.show_picker(ctx),
+                #[cfg(target_os = "linux")]
+                Event::ShortcutRegistered(id, requested, persist, result) => self.shortcut_registered(id, requested, persist, result),
                 Event::Progress(s) => self.message(s, false),
                 Event::Catalog(id, result) => {
                     if id == self.catalog_id {

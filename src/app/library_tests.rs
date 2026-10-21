@@ -97,6 +97,7 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         paste_at: None,
         shortcut: None,
         shortcut_status: String::new(),
+        shortcut_generation: 0,
         #[cfg(target_os = "linux")]
         portal_task: None,
         tray: None,
@@ -978,4 +979,30 @@ fn copy_completion_respects_cancellation_modifiers_and_clipboard_failure() {
             assert!(app.status.contains("clipboard unavailable"));
         }
     }
+}
+
+#[test]
+fn shortcut_settings_change_only_after_current_registration_succeeds() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let original = app.settings.shortcut.clone();
+    app.shortcut_generation = 2;
+    app.shortcut_registered(1, "Ctrl+Alt+S".into(), true, Ok(()));
+    assert_eq!(app.store.settings().unwrap().shortcut, original);
+    app.shortcut_registered(
+        2,
+        "Ctrl+Alt+S".into(),
+        true,
+        Err(anyhow::anyhow!("permission denied")),
+    );
+    assert_eq!(app.store.settings().unwrap().shortcut, original);
+    assert!(app.shortcut_status.contains("permission denied"));
+    app.shortcut_registered(2, "Ctrl+Alt+S".into(), true, Ok(()));
+    assert_eq!(app.store.settings().unwrap().shortcut, "Ctrl+Alt+S");
+    assert_eq!(app.shortcut_status, "Active: Ctrl+Alt+S");
 }

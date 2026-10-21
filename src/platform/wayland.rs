@@ -151,7 +151,11 @@ impl Wayland {
 }
 /// # Errors
 /// Returns an error if the portal cannot create, bind, or monitor the global-shortcut session.
-pub async fn shortcuts(trigger: String, activate: impl Fn() + Send + 'static) -> Result<()> {
+pub async fn shortcuts(
+    trigger: String,
+    ready: impl FnOnce() + Send + 'static,
+    activate: impl Fn() + Send + 'static,
+) -> Result<()> {
     let proxy = GlobalShortcuts::new()
         .await
         .context("No shortcut portal; bind `picora --show` in desktop settings")?;
@@ -167,6 +171,7 @@ pub async fn shortcuts(trigger: String, activate: impl Fn() + Send + 'static) ->
         !bound.shortcuts().is_empty(),
         "No shortcut was granted; use picora --show"
     );
+    ready();
     while let Some(event) = events.next().await {
         if event.shortcut_id() == "show-picker" {
             activate();

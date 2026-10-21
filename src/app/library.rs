@@ -1,6 +1,5 @@
 use super::{
-    App, Filter, LibrarySticker, PackRef, Provider, RichText, Tab, View, apply_theme, design, egui,
-    platform,
+    App, Filter, LibrarySticker, PackRef, Provider, RichText, Tab, View, design, egui, platform,
 };
 impl App {
     fn library_collections(&mut self, ui: &mut egui::Ui) {
@@ -471,12 +470,7 @@ impl App {
                     .parse::<global_hotkey::hotkey::HotKey>()
                     .is_ok()
                 {
-                    self.register_shortcut();
-                    if platform::is_wayland() || self.shortcut_status.starts_with("Active:") {
-                        self.settings.shortcut.clone_from(&self.shortcut_text);
-                        let r = self.store.save_settings(&self.settings);
-                        self.report(r, "Shortcut saved");
-                    }
+                    self.register_shortcut(true);
                 } else {
                     self.message("Use a shortcut such as Ctrl+Shift+Space", true);
                 }
@@ -522,14 +516,18 @@ impl App {
         }
         ui.horizontal(|ui| {
             ui.label("Appearance");
-            for theme in ["System", "Light", "Dark"] {
+            for (label, theme) in [
+                ("System", egui::ThemePreference::System),
+                ("Light", egui::ThemePreference::Light),
+                ("Dark", egui::ThemePreference::Dark),
+            ] {
                 changed |= ui
-                    .selectable_value(&mut self.settings.theme, theme.into(), theme)
+                    .selectable_value(&mut self.settings.theme, theme, label)
                     .changed();
             }
         });
         if changed {
-            apply_theme(ui.ctx(), &self.settings.theme);
+            ui.ctx().set_theme(self.settings.theme);
             let r = self.store.save_settings(&self.settings);
             self.report(r, "Settings saved");
         }

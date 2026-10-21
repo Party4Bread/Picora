@@ -115,6 +115,7 @@ pub struct App {
     shortcut: Option<Shortcut>,
     shortcut_text: String,
     shortcut_status: String,
+    shortcut_generation: u64,
     #[cfg(target_os = "linux")]
     portal_task: Option<tokio::task::JoinHandle<()>>,
     tray: Option<tray_icon::TrayIcon>,
@@ -150,7 +151,7 @@ impl App {
         ime::install(ctx);
         let store = Store::open(&root.join("library.sqlite3"))?;
         let settings = store.settings()?;
-        apply_theme(ctx, &settings.theme);
+        ctx.set_theme(settings.theme);
         let (tx, rx) = mpsc::channel();
         let bus = Bus {
             tx,
@@ -200,6 +201,7 @@ impl App {
             paste_at: None,
             shortcut: None,
             shortcut_status: String::new(),
+            shortcut_generation: 0,
             #[cfg(target_os = "linux")]
             portal_task: None,
             tray: None,
@@ -213,7 +215,7 @@ impl App {
         if app.settings.check_updates_automatically {
             app.updates.check(&app.services.runtime, ctx);
         }
-        app.register_shortcut();
+        app.register_shortcut(false);
         #[cfg(target_os = "linux")]
         if platform::is_wayland() {
             app.services.enable_wayland(true);
@@ -243,42 +245,79 @@ impl App {
             (Err(e), _) | (_, Err(e)) => self.message(e.to_string(), true),
         }
     }
-    fn register_shortcut(&mut self) {
-        if platform::is_wayland() {
-            #[cfg(target_os = "linux")]
-            {
-                if let Some(task) = self.portal_task.take() {
-                    task.abort();
-                }
-                let bus = self.services.bus.clone();
-                let trigger = self
-                    .shortcut_text
-                    .replace("Ctrl", "CTRL")
-                    .replace("Shift", "SHIFT")
-                    .replace("Space", "space");
-                self.portal_task = Some(self.services.runtime.spawn(async move {
-                    let activate = bus.clone();
-                    if let Err(e) =
-                        platform::wayland::shortcuts(trigger, move || activate.send(Event::Show))
-                            .await
-                    {
-                        bus.send(Event::Progress(format!("Shortcut: {e}")));
-                    }
-                }));
-                self.shortcut_status =
-                    "Desktop shortcut permission requested. Use picora --show if unavailable."
-                        .into();
-            }
+    fn register_native_shortcut(&mut self) -> Result<()> {
+        if let Some(shortcut) = &mut self.shortcut {
+            shortcut.replace(&self.shortcut_text)
         } else {
-            let result = if let Some(s) = &mut self.shortcut {
-                s.replace(&self.shortcut_text)
-            } else {
-                Shortcut::new(&self.shortcut_text).map(|s| self.shortcut = Some(s))
-            };
-            self.shortcut_status = match result {
-                Ok(()) => format!("Active: {}", self.shortcut_text),
-                Err(e) => format!("{e:#}"),
-            };
+            self.shortcut = Some(Shortcut::new(&self.shortcut_text)?);
+            Ok(())
+        }
+    }
+    fn register_shortcut(&mut self, persist: bool) {
+        self.shortcut_generation += 1;
+        let id = self.shortcut_generation;
+        let requested = self.shortcut_text.clone();
+        #[cfg(target_os = "linux")]
+        if platform::is_wayland() {
+            if let Some(task) = self.portal_task.take() {
+                task.abort();
+            }
+            let bus = self.services.bus.clone();
+            let trigger = requested
+                .replace("Ctrl", "CTRL")
+                .replace("Shift", "SHIFT")
+                .replace("Space", "space");
+            self.portal_task = Some(self.services.runtime.spawn(async move {
+                let activate = bus.clone();
+                let ready = bus.clone();
+                let ready_shortcut = requested.clone();
+                let result = platform::wayland::shortcuts(
+                    trigger,
+                    move || {
+                        ready.send(Event::ShortcutRegistered(
+                            id,
+                            ready_shortcut,
+                            persist,
+                            Ok(()),
+                        ))
+                    },
+                    move || activate.send(Event::Show),
+                )
+                .await;
+                let error = result.err().unwrap_or_else(|| {
+                    anyhow::anyhow!("Desktop shortcut session ended; reconnect in Settings")
+                });
+                bus.send(Event::ShortcutRegistered(id, requested, false, Err(error)));
+            }));
+            self.shortcut_status = "Waiting for desktop shortcut permission…".into();
+            return;
+        }
+        let result = self.register_native_shortcut();
+        self.shortcut_registered(id, requested, persist, result);
+    }
+    fn shortcut_registered(
+        &mut self,
+        id: u64,
+        requested: String,
+        persist: bool,
+        result: Result<()>,
+    ) {
+        if id != self.shortcut_generation {
+            return;
+        }
+        match result {
+            Ok(()) => {
+                self.shortcut_status = format!("Active: {requested}");
+                if persist {
+                    self.settings.shortcut = requested;
+                    let result = self.store.save_settings(&self.settings);
+                    self.report(result, "Shortcut saved");
+                }
+            }
+            Err(error) => {
+                self.shortcut_status = format!("{error:#}");
+                self.message(format!("Shortcut unavailable: {error:#}"), true);
+            }
         }
     }
     fn cancel_auto_paste(&mut self) {
@@ -677,13 +716,6 @@ impl eframe::App for App {
         }
         ctx.request_repaint_after(Duration::from_millis(100));
     }
-}
-fn apply_theme(ctx: &egui::Context, theme: &str) {
-    ctx.set_theme(match theme {
-        "Light" => egui::ThemePreference::Light,
-        "Dark" => egui::ThemePreference::Dark,
-        _ => egui::ThemePreference::System,
-    });
 }
 fn make_tray() -> Result<tray_icon::TrayIcon> {
     use tray_icon::{

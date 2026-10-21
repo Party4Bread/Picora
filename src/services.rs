@@ -54,6 +54,8 @@ pub enum Event {
     #[cfg(target_os = "linux")]
     Show,
     #[cfg(target_os = "linux")]
+    ShortcutRegistered(u64, String, bool, Result<()>),
+    #[cfg(target_os = "linux")]
     Wayland(Result<Option<String>>),
 }
 #[derive(Clone)]

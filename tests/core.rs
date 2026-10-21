@@ -274,3 +274,32 @@ fn updates_require_existing_records_and_removals_are_idempotent() {
     store.rename_group(group, "new").unwrap();
     assert_eq!(store.groups().unwrap()[0].name, "new");
 }
+
+#[test]
+fn theme_settings_preserve_existing_values_and_normalize_unknown_values() {
+    use eframe::egui::ThemePreference;
+    use picora::model::Settings;
+    for (saved, expected) in [
+        ("System", ThemePreference::System),
+        ("Light", ThemePreference::Light),
+        ("Dark", ThemePreference::Dark),
+        ("unsupported", ThemePreference::System),
+    ] {
+        let settings: Settings =
+            serde_json::from_value(serde_json::json!({"theme": saved})).unwrap();
+        assert_eq!(settings.theme, expected);
+        let value = serde_json::to_value(settings).unwrap();
+        assert_eq!(
+            value["theme"],
+            if saved == "unsupported" {
+                "System"
+            } else {
+                saved
+            }
+        );
+    }
+    assert_eq!(
+        serde_json::from_str::<Settings>("{}").unwrap().theme,
+        ThemePreference::System
+    );
+}
