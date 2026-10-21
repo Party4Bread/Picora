@@ -213,6 +213,68 @@ fn favorite_button_populates_library_sidebar_before_download_finishes() {
 }
 
 #[test]
+fn picker_accepts_text_in_the_frame_it_receives_window_focus() {
+    for events in [
+        vec![egui::Event::Text("고양이".into())],
+        vec![
+            egui::Event::Ime(egui::ImeEvent::Enabled),
+            egui::Event::Ime(egui::ImeEvent::Preedit("고양이".into())),
+            egui::Event::Ime(egui::ImeEvent::Commit("고양이".into())),
+            egui::Event::Ime(egui::ImeEvent::Disabled),
+        ],
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut app = fixture(root.path().to_owned(), runtime.handle().clone(), &ctx);
+        let input = egui::RawInput {
+            focused: true,
+            events: std::iter::once(egui::Event::WindowFocused(true))
+                .chain(events)
+                .collect(),
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.picker(ctx));
+        assert_eq!(app.picker_state.search, "고양이");
+    }
+}
+
+#[test]
+fn picker_waits_for_window_focus_before_consuming_search_focus_request() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), runtime.handle().clone(), &ctx);
+    let _ = ctx.run(
+        egui::RawInput {
+            focused: false,
+            ..Default::default()
+        },
+        |ctx| app.picker(ctx),
+    );
+    assert!(
+        app.focus_search,
+        "hidden-window render must not consume focus"
+    );
+    let _ = ctx.run(
+        egui::RawInput {
+            focused: true,
+            events: vec![egui::Event::Text("cat".into())],
+            ..Default::default()
+        },
+        |ctx| app.picker(ctx),
+    );
+    assert_eq!(app.picker_state.search, "cat");
+    assert!(!app.focus_search);
+}
+
+#[test]
 fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
     let root = tempfile::tempdir().unwrap();
     let rt = tokio::runtime::Builder::new_current_thread()

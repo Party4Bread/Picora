@@ -344,10 +344,20 @@ impl App {
             focus::capture_external()
         };
         self.picker_open = true;
-        self.focus_search = true;
         self.picker_state.selected = 0;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        self.focus_picker(ctx);
+    }
+    fn focus_picker(&mut self, ctx: &egui::Context) {
+        self.focus_search = true;
+        #[cfg(target_os = "macos")]
+        if let Err(error) = focus::activate_current_app() {
+            self.message(
+                format!("Could not activate Picora: {error}. Click the picker to search."),
+                true,
+            );
+        }
+        ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
     }
     fn hide_picker(&mut self, ctx: &egui::Context) {
         self.cancel_auto_paste();
@@ -617,17 +627,21 @@ impl App {
                     }
                     ui.add_space(8.);
                 }
+                let search_id = egui::Id::new("picker-search");
+                if self.focus_search && ui.input(|i| i.focused) {
+                    // Focus before TextEdit processes this frame's text/IME
+                    // events, and retain the request while the window activates.
+                    ui.memory_mut(|memory| memory.request_focus(search_id));
+                    self.focus_search = false;
+                }
                 let search = ui.add_sized(
                     [ui.available_width(), 36.],
                     egui::TextEdit::singleline(&mut self.picker_state.search)
+                        .id(search_id)
                         .hint_text("Search stickers…")
                         .margin(egui::vec2(12., 8.))
                         .desired_width(f32::INFINITY),
                 );
-                if self.focus_search {
-                    search.request_focus();
-                    self.focus_search = false;
-                }
                 if ui.input(|i| {
                     i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp)
                 }) {
