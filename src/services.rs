@@ -51,6 +51,7 @@ pub enum Event {
     #[cfg(target_os = "macos")]
     NativePaste(Target, crate::platform::paste::Ticket),
     Login(Result<String>),
+    #[cfg(target_os = "linux")]
     Show,
     #[cfg(target_os = "linux")]
     Wayland(Result<Option<String>>),
