@@ -132,7 +132,7 @@ impl App {
                             }
                             self.cache_visual(&url, Visual { frames, delays, bytes, animation_loaded: animate || !asset.animated, last_used: ctx.cumulative_frame_nr() }, 128 * 1024 * 1024);
                         }
-                        Err(e) => { self.failed.insert(url, e.to_string()); }
+                        Err(e) => { self.failed.insert(url, format!("{e:#}")); }
                     }
                 }
                 Event::Copied(result) => self.copy_completed(ctx, result),

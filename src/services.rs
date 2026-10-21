@@ -208,47 +208,60 @@ impl Services {
     pub fn copy(&self, item: LibrarySticker, mode: crate::media::CopyMode) {
         let s = self.clone();
         self.runtime.spawn(async move {
-            let result = async {
-                let asset = s.load_asset(item.provider, &item.sticker.url).await?;
-                let cache = s.cache.clone();
-                let (asset, original) =
-                    tokio::task::spawn_blocking(move || cache.prepare_copy(asset, mode)).await??;
-                #[cfg(target_os = "linux")]
-                let portal_error = {
-                    let wayland = s
-                        .wayland
-                        .lock()
-                        .map_err(|_| {
-                            anyhow::anyhow!("Wayland session unavailable; restart Picora")
-                        })?
-                        .clone();
-                    if let Some(w) = wayland {
-                        match w.copy(asset.clone(), original).await {
-                            Ok(()) => return Ok(item),
-                            Err(error) => Some(error),
-                        }
-                    } else {
-                        None
-                    }
-                };
-                let clipboard = s.clipboard.clone();
-                let fallback =
-                    tokio::task::spawn_blocking(move || clipboard.copy(&asset, original))
-                        .await
-                        .unwrap_or_else(|error| Err(error.into()));
-                #[cfg(target_os = "linux")]
-                let fallback = match portal_error {
-                    Some(error) => {
-                        fallback.with_context(|| format!("Portal clipboard also failed: {error:#}"))
-                    }
-                    None => fallback,
-                };
-                fallback?;
-                Ok(item)
-            }
+            s.copy_with(item, mode, |asset, original| {
+                s.copy_to_clipboard(asset, original)
+            })
             .await;
-            s.bus.send(Event::Copied(result));
         });
+    }
+    async fn copy_with<F>(
+        &self,
+        item: LibrarySticker,
+        mode: crate::media::CopyMode,
+        clipboard: impl FnOnce(Asset, bool) -> F,
+    ) where
+        F: std::future::Future<Output = Result<()>>,
+    {
+        let result = async {
+            let asset = self.load_asset(item.provider, &item.sticker.url).await?;
+            let cache = self.cache.clone();
+            let (asset, original) =
+                tokio::task::spawn_blocking(move || cache.prepare_copy(asset, mode)).await??;
+            clipboard(asset, original).await?;
+            Ok(item)
+        }
+        .await;
+        self.bus.send(Event::Copied(result));
+    }
+    async fn copy_to_clipboard(&self, asset: Asset, original: bool) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        let portal_error = {
+            let wayland = self
+                .wayland
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Wayland session unavailable; restart Picora"))?
+                .clone();
+            if let Some(w) = wayland {
+                match w.copy(asset.clone(), original).await {
+                    Ok(()) => return Ok(()),
+                    Err(error) => Some(error),
+                }
+            } else {
+                None
+            }
+        };
+        let clipboard = self.clipboard.clone();
+        let fallback = tokio::task::spawn_blocking(move || clipboard.copy(&asset, original))
+            .await
+            .unwrap_or_else(|error| Err(error.into()));
+        #[cfg(target_os = "linux")]
+        let fallback = match portal_error {
+            Some(error) => {
+                fallback.with_context(|| format!("Portal clipboard also failed: {error:#}"))
+            }
+            None => fallback,
+        };
+        fallback
     }
     pub fn paste_ticket(&self) -> crate::platform::paste::Ticket {
         self.cancellation.ticket()
@@ -422,65 +435,4 @@ impl Services {
 }
 
 #[cfg(test)]
-mod failure_tests {
-    use super::*;
-
-    #[test]
-    fn damaged_shared_state_still_completes_requests() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let (tx, rx) = mpsc::channel();
-        let s = Services::with_session(
-            rt.handle().clone(),
-            MediaCache::new(dir.path().into()).unwrap(),
-            Bus {
-                tx,
-                ctx: Default::default(),
-            },
-            Ok(vec![]),
-        )
-        .unwrap();
-        let repos = s.repos.clone();
-        let _ = std::thread::spawn(move || {
-            let _guard = repos.lock().unwrap();
-            panic!("simulate interrupted repository mutation");
-        })
-        .join();
-        rt.block_on(async {
-            s.browse(Provider::Arca, String::new(), 1, 42);
-            tokio::task::yield_now().await;
-        });
-        let Event::Catalog(42, result) = rx.try_recv().unwrap() else {
-            panic!("missing catalog completion")
-        };
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Repository state unavailable")
-        );
-
-        let status = s.account_status.clone();
-        let _ = std::thread::spawn(move || {
-            let _guard = status.lock().unwrap();
-            panic!("simulate interrupted account mutation");
-        })
-        .join();
-        rt.block_on(async {
-            s.check_arca();
-            tokio::task::yield_now().await;
-        });
-        let Event::Login(result) = rx.try_recv().unwrap() else {
-            panic!("missing account completion")
-        };
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Account state unavailable")
-        );
-    }
-}
+mod tests;

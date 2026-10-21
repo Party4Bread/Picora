@@ -11,6 +11,7 @@ pub fn capture() -> Option<Target> {
     }
     #[cfg(target_os = "windows")]
     {
+        // SAFETY: parameterless query; the returned HWND is borrowed and never dereferenced.
         let hwnd = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
         if !hwnd.is_null() {
             return Some(Target(hwnd as u64));
@@ -43,6 +44,7 @@ pub fn capture_external() -> Option<Target> {
     #[cfg(target_os = "windows")]
     {
         let mut pid = 0;
+        // SAFETY: pid is writable for the call; Windows validates the opaque HWND.
         unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(
                 target.0 as *mut _,
@@ -86,14 +88,15 @@ pub fn capture_external() -> Option<Target> {
     }
     Some(target)
 }
-/// # Errors
 /// Restore the native recipient on Windows, macOS, or X11. Wayland is a successful
 /// no-op; the compositor controls focus after the picker closes.
 ///
+/// # Errors
 /// Returns an error if native target lookup or focus restoration fails.
 pub fn restore(target: Target) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
+        // SAFETY: the opaque HWND is passed back to Windows, which rejects invalid handles.
         let ok = unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(target.0 as *mut _)
         };

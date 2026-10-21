@@ -85,31 +85,15 @@ mod tests {
 #[cfg(test)]
 mod lifecycle_tests {
     use crate::{
-        media::MediaCache,
         model::Provider,
-        services::{Bus, Event, Services},
+        services::{Event, tests::Fixture},
     };
-    use std::sync::mpsc;
 
     #[test]
     fn login_preserves_session_across_storage_and_verification_failures() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
         for (save_ok, verify_ok) in [(true, true), (false, true), (true, false)] {
-            let dir = tempfile::tempdir().unwrap();
-            let (tx, rx) = mpsc::channel();
-            let services = Services::with_session(
-                rt.handle().clone(),
-                MediaCache::new(dir.path().into()).unwrap(),
-                Bus {
-                    tx,
-                    ctx: Default::default(),
-                },
-                Ok(vec![]),
-            )
-            .unwrap();
+            let fixture = Fixture::new();
+            let (services, rt, rx) = (&fixture.services, &fixture.runtime, &fixture.rx);
             rt.block_on(services.login_with(
                 async { Ok(vec!["session=test-session; Path=/; Secure".into()]) },
                 |cookies| async move {
@@ -174,22 +158,8 @@ mod lifecycle_tests {
 
     #[test]
     fn failed_sign_in_emits_error_without_saving_or_verifying() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let (tx, rx) = mpsc::channel();
-        let services = Services::with_session(
-            rt.handle().clone(),
-            MediaCache::new(dir.path().into()).unwrap(),
-            Bus {
-                tx,
-                ctx: Default::default(),
-            },
-            Ok(vec![]),
-        )
-        .unwrap();
+        let fixture = Fixture::new();
+        let (services, rt, rx) = (&fixture.services, &fixture.runtime, &fixture.rx);
         rt.block_on(services.login_with(
             async { anyhow::bail!("sign-in cancelled") },
             |_| async { panic!("must not persist a failed sign-in") },

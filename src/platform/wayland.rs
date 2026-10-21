@@ -43,16 +43,17 @@ impl Wayland {
                 )
                 .await?
                 .response()?;
-            let clipboard = Clipboard::new().await.ok();
-            let clipboard = if let Some(c) = clipboard {
-                if c.request(&session).await.is_ok() {
-                    Some(c)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let clipboard = async {
+                let clipboard = Clipboard::new()
+                    .await
+                    .context("Cannot initialize clipboard portal")?;
+                clipboard
+                    .request(&session)
+                    .await
+                    .context("Clipboard portal access was not granted")?;
+                Ok::<_, anyhow::Error>(clipboard)
+            }
+            .await;
             let selected = remote.start(&session, None).await?.response()?;
             ensure!(
                 selected.devices().contains(DeviceType::Keyboard),
@@ -73,14 +74,14 @@ impl Wayland {
         tokio::spawn(async move {
             let mut contents: Option<(String, Vec<u8>)> = None;
             let (mut transfers, transfer_error) = match &clipboard {
-                Some(c) => match c.receive_selection_transfer().await {
+                Ok(c) => match c.receive_selection_transfer().await {
                     Ok(stream) => (Some(Box::pin(stream)), None),
                     Err(error) => (
                         None,
                         Some(format!("Clipboard transfer listener unavailable: {error}")),
                     ),
                 },
-                None => (None, Some("Clipboard portal unavailable".to_owned())),
+                Err(error) => (None, Some(format!("{error:#}"))),
             };
             let Ok(closed) = session.receive_closed().await else {
                 let _ = session.close().await;
@@ -94,7 +95,7 @@ impl Wayland {
                         Some(Command::Copy{asset,original,result})=>{
                             let response=async {
                                 ensure_clipboard_ready(transfer_error.as_deref())?;
-                                let c=clipboard.as_ref().context("Clipboard portal unavailable; trying the desktop clipboard")?;
+                                let c=clipboard.as_ref().map_err(|error|anyhow::anyhow!("{error:#}"))?;
                                 let (mime,data)=if original {let url=url::Url::from_file_path(&asset.original).map_err(|()|anyhow::anyhow!("Invalid sticker file path"))?;("text/uri-list",format!("{url}\r\n").into_bytes())}else{("image/png",tokio::fs::read(&asset.still).await?)};
                                 c.set_selection(&session,&[mime]).await?;contents=Some((mime.into(),data));Ok(())
                             }.await;let _=result.send(response);
@@ -111,7 +112,7 @@ impl Wayland {
                         None=>break,
                     },
                     transfer=async {match transfers.as_mut(){Some(s)=>s.next().await,None=>std::future::pending().await}}=>{
-                        if let (Some((_,mime,serial)),Some(c))=(transfer,&clipboard) {
+                        if let (Some((_,mime,serial)),Ok(c))=(transfer,&clipboard) {
                             let response=async {let (_,data)=contents.as_ref().filter(|(m,_)|*m==mime).context("Clipboard format not offered")?;
                                 let fd=c.selection_write(&session,serial).await?;
                                 let fd:std::os::fd::OwnedFd=fd.into();let file:std::fs::File=fd.into();let mut file=tokio::fs::File::from_std(file);file.write_all(data).await?;file.flush().await?;Ok::<_,anyhow::Error>(())}.await;

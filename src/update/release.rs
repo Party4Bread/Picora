@@ -217,6 +217,11 @@ impl ReleaseClient {
             .send()
             .await?
             .error_for_status()?;
+        ensure!(
+            response.status().is_success(),
+            "Unexpected release metadata status: {}",
+            response.status()
+        );
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await? {
             ensure!(
@@ -278,6 +283,12 @@ impl ReleaseClient {
         path: &Path,
         mut progress: impl FnMut(u64, u64),
     ) -> Result<()> {
+        response.error_for_status_ref()?;
+        ensure!(
+            response.status().is_success(),
+            "Unexpected update download status: {}",
+            response.status()
+        );
         let mut file = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -398,6 +409,36 @@ mod tests {
             );
             assert!(!path.exists());
         }
+    }
+    #[tokio::test]
+    async fn stopped_redirect_is_rejected_before_creating_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("archive");
+        let update = AvailableUpdate {
+            version: "99.0.0".into(),
+            notes: String::new(),
+            url: String::new(),
+            asset: ReleaseAsset {
+                target: Target::LinuxX86_64,
+                name: String::new(),
+                size: 5,
+                sha256: hex::encode(Sha256::digest(b"build")),
+            },
+        };
+        let response = reqwest::get(server(302, b"build".to_vec())).await.unwrap();
+        let error = ReleaseClient::save_response(response, &update, &path, |_, _| {
+            panic!("must not write redirect body")
+        })
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("302"));
+        assert!(!path.exists());
+        let client = ReleaseClient::new().unwrap();
+        let error = client
+            .metadata::<serde_json::Value>(&server(302, b"{}".to_vec()))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("302"));
     }
     fn fs_read(path: &Path) -> Vec<u8> {
         std::fs::read(path).unwrap()

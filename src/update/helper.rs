@@ -187,6 +187,7 @@ impl Parent {
 #[cfg(windows)]
 impl Drop for Parent {
     fn drop(&mut self) {
+        // SAFETY: Parent owns the non-null handle from OpenProcess and closes it once.
         unsafe {
             windows_sys::Win32::Foundation::CloseHandle(self.0);
         }

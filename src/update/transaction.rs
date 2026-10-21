@@ -456,9 +456,8 @@ fn replace(from: &Path, to: &Path) -> Result<()> {
             use std::os::unix::ffi::OsStrExt;
             let a = std::ffi::CString::new(from.as_os_str().as_bytes())?;
             let b = std::ffi::CString::new(to.as_os_str().as_bytes())?;
-            // SAFETY: both paths are valid NUL-terminated strings; atomic exchange
-            // keeps a launchable bundle present even if power fails after the call.
             #[cfg(target_os = "macos")]
+            // SAFETY: both CStrings outlive the synchronous call; no path pointers escape.
             let result = unsafe {
                 libc::renameatx_np(
                     libc::AT_FDCWD,
@@ -469,6 +468,7 @@ fn replace(from: &Path, to: &Path) -> Result<()> {
                 )
             };
             #[cfg(target_os = "linux")]
+            // SAFETY: both CStrings outlive the synchronous call; no path pointers escape.
             let result = unsafe {
                 libc::renameat2(
                     libc::AT_FDCWD,

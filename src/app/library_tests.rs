@@ -1006,3 +1006,27 @@ fn shortcut_settings_change_only_after_current_registration_succeeds() {
     assert_eq!(app.store.settings().unwrap().shortcut, "Ctrl+Alt+S");
     assert_eq!(app.shortcut_status, "Active: Ctrl+Alt+S");
 }
+
+#[test]
+fn media_failure_preserves_the_diagnostic_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(dir.path().to_owned(), rt.handle().clone(), &ctx);
+    let permit = std::sync::Arc::new(tokio::sync::Semaphore::new(1))
+        .try_acquire_owned()
+        .unwrap();
+    app.services.bus.send(Event::Media(
+        "test-sticker".into(),
+        Err(anyhow::anyhow!("missing video track").context("Invalid MP4 sticker")),
+        true,
+        permit,
+    ));
+    app.handle_events(&ctx);
+    assert_eq!(
+        app.failed.get("test-sticker").unwrap(),
+        "Invalid MP4 sticker: missing video track"
+    );
+}
