@@ -1,16 +1,16 @@
-# Picora — DCInside & Arca Sticker Picker
+# Picora — Desktop Sticker Picker
 
-**A desktop sticker picker for Windows, macOS, and Linux, built in Rust.** Search **DCInside stickers (디시콘)** and **Arca Live stickers (아카콘)**, save your favorites, and paste image reactions into apps that accept clipboard images or attachments.
+**A desktop sticker picker for Windows, macOS, and Linux, built in Rust.** Search sticker packs, save your favorites, and paste image reactions into apps that accept clipboard images or attachments.
 
 Like the Windows emoji panel, Picora opens with a shortcut: **Ctrl+Shift+Space**. Choose a sticker to copy it and attempt to paste into your previous app. Picora never presses Enter to send a message.
 
 **[Download the latest release](https://github.com/Party4Bread/Picora/releases/latest)** · **[Report a bug](https://github.com/Party4Bread/Picora/issues)** · **[Compatibility](docs/COMPATIBILITY.md)**
 
-디시콘·아카콘을 데스크톱에서 검색하고, 즐겨찾기와 사용자 그룹으로 정리하세요. 단축키로 스티커를 열어 이미지나 파일로 붙여넣을 수 있습니다. Windows, macOS, Linux를 지원합니다.
+이미지 스티커를 데스크톱에서 검색하고, 즐겨찾기와 사용자 그룹으로 정리하세요. 단축키로 스티커를 열어 이미지나 파일로 붙여넣을 수 있습니다. Windows, macOS, Linux를 지원합니다.
 
 ## Features
 
-- **Search sticker packs:** browse DCInside and Arca Live, or import a pack by URL.
+- **Search sticker packs:** browse supported sticker repositories or import a pack by URL.
 - **Organize your library:** favorite individual stickers, create custom groups, and manage stickers with a right-click.
 - **Find recent stickers:** recently used stickers appear first, followed by newly added ones.
 - **Use animated reactions:** hover to preview; copy a still image or paste an animated file. Downloaded stickers remain available offline.
@@ -27,23 +27,23 @@ Like the Windows emoji panel, Picora opens with a shortcut: **Ctrl+Shift+Space**
 
 Download these files from [GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest).
 
-- **Windows:** the installer is unsigned. Arca login requires WebView2. Quit Picora before a manual upgrade or uninstall; uninstalling preserves your library and settings.
+- **Windows:** the installer is unsigned. Website sign-in requires WebView2. Quit Picora before a manual upgrade or uninstall; uninstalling preserves your library and settings.
 - **macOS:** builds are ad-hoc signed, not Apple-notarized. Read the [macOS installation guide](docs/MACOS-INSTALL.md) if Gatekeeper blocks launch. Intel Mac builds are not currently provided.
 - **Linux:** install the system libraries listed under [building from source](#build-from-source). Picker windows require X11 or XWayland.
 
 ## Quick start
 
-1. Open **Library → Discover** from the tray/menu-bar icon. Search for a pack or paste a URL such as `https://dccon.dcinside.com/#41982` or `https://arca.live/e/54950`, then choose **Add pack to favorites**.
+1. Open **Library → Discover** from the tray/menu-bar icon. Search for a pack or paste its repository URL, then choose **Add pack to favorites**.
 2. Create collections in **Groups**. Right-click a sticker to favorite it, assign groups, or remove it from your library.
 3. Focus your chat or editor, press **Ctrl+Shift+Space**, and choose a sticker. If automatic paste is unavailable, use **Ctrl+V** or **Cmd+V**.
 
 Closing a window keeps Picora running in the tray. Use **Quit** to exit. The library window copies stickers without automatic paste; launch at login is opt-in.
 
-### Arca sign-in
+### Repository accounts
 
-Open **Accounts → Sign in / reconnect**, sign in on Arca’s website, complete any browser challenge, and close the login window. **Check connection** verifies catalog access. Saved sessions and connection errors appear in Accounts.
+Open **Accounts → Sign in / reconnect**, sign in on the repository’s website, complete any browser challenge, and close the login window. **Check connection** verifies catalog access. Saved sessions and connection errors appear in Accounts.
 
-Picora stores session cookies using OS-protected storage. If saving fails, the session remains available until Picora quits. DCInside browsing does not require sign-in.
+Picora stores session cookies using OS-protected storage. If saving fails, the session remains available until Picora quits. Some repositories support browsing without sign-in.
 
 ### Animated stickers
 
@@ -135,6 +135,6 @@ On Linux, optional desktop integration files are included in the archive. Put th
 
 ## Project
 
-Picora uses Rust and egui. Repository adapters, SQLite storage, media caching, and native desktop integration are separate modules; Arca login runs in a Wry helper process.
+Picora uses Rust and egui. Repository adapters, SQLite storage, media caching, and native desktop integration are separate modules; website sign-in runs in a Wry helper process.
 
-[Noto Sans KR](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/KR) is bundled under the [SIL Open Font License](assets/OFL.txt). Sticker artwork is downloaded from its source repository at your request. Picora is independent of DCInside and Arca Live.
+[Noto Sans KR](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/KR) is bundled under the [SIL Open Font License](assets/OFL.txt). Sticker artwork is downloaded from its source repository at your request. Picora is not affiliated with the supported repositories.
