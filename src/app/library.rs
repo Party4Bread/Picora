@@ -19,12 +19,12 @@ impl App {
                     ("Discover", Tab::Browse),
                     ("Groups", Tab::Groups),
                 ] {
-                    let selected =
-                        self.tab == tab && (tab != Tab::Library || self.filter == Filter::All);
+                    let selected = self.tab == tab
+                        && (tab != Tab::Library || self.library_state.filter == Filter::All);
                     if design::nav_row(ui, label, selected, None).clicked() {
                         self.tab = tab;
                         if tab == Tab::Library {
-                            self.filter = Filter::All;
+                            self.library_state.filter = Filter::All;
                         }
                         if tab == Tab::Browse && self.catalog.is_empty() {
                             self.browse();
@@ -44,13 +44,13 @@ impl App {
                             if design::nav_row(
                                 ui,
                                 label,
-                                self.tab == Tab::Library && self.filter == filter,
+                                self.tab == Tab::Library && self.library_state.filter == filter,
                                 None,
                             )
                             .clicked()
                             {
                                 self.tab = Tab::Library;
-                                self.filter = filter;
+                                self.library_state.filter = filter;
                             }
                         }
                         ui.add_space(8.);
@@ -63,13 +63,13 @@ impl App {
                             if design::nav_row(
                                 ui,
                                 &p.pack.title,
-                                self.tab == Tab::Library && self.filter == filter,
+                                self.tab == Tab::Library && self.library_state.filter == filter,
                                 Some(p.pack.stickers.len()),
                             )
                             .clicked()
                             {
                                 self.tab = Tab::Library;
-                                self.filter = filter;
+                                self.library_state.filter = filter;
                             }
                         }
                         if !self.groups.is_empty() {
@@ -80,13 +80,13 @@ impl App {
                                 if design::nav_row(
                                     ui,
                                     &g.name,
-                                    self.tab == Tab::Library && self.filter == filter,
+                                    self.tab == Tab::Library && self.library_state.filter == filter,
                                     None,
                                 )
                                 .clicked()
                                 {
                                     self.tab = Tab::Library;
-                                    self.filter = filter;
+                                    self.library_state.filter = filter;
                                 }
                             }
                         }
@@ -175,7 +175,7 @@ impl App {
                             sticker: s.clone(),
                         })
                         .collect();
-                    self.grid(ui, items, false);
+                    self.grid(ui, items, View::Preview);
                 });
             if !open {
                 self.preview = None;
@@ -183,8 +183,8 @@ impl App {
         }
     }
     pub(super) fn library_content(&mut self, ui: &mut egui::Ui) {
-        let title = self.collection_title();
-        let Some(items) = self.load_items(ui) else {
+        let title = self.collection_title(&self.library_state.filter);
+        let Some(items) = self.load_items(ui, View::Library) else {
             return;
         };
         ui.heading(&title);
@@ -196,12 +196,12 @@ impl App {
         ui.add_space(12.);
         ui.add_sized(
             [ui.available_width(), 36.],
-            egui::TextEdit::singleline(&mut self.search)
+            egui::TextEdit::singleline(&mut self.library_state.search)
                 .hint_text("Search stickers…")
                 .margin(egui::vec2(12., 8.)),
         );
         ui.add_space(8.);
-        if let Filter::Pack(key) = self.filter.clone()
+        if let Filter::Pack(key) = self.library_state.filter.clone()
             && let Some(p) = self
                 .packs
                 .iter()
@@ -222,12 +222,12 @@ impl App {
                         r,
                         "Pack removed; cached files retained for clipboard safety",
                     );
-                    self.filter = Filter::All;
+                    self.library_state.filter = Filter::All;
                     self.refresh();
                 }
             });
         }
-        if self.filter == Filter::Recent {
+        if self.library_state.filter == Filter::Recent {
             ui.label("Recently used first, then newly added stickers.");
         }
         ui.label(
@@ -236,8 +236,8 @@ impl App {
                 .weak(),
         );
         ui.add_space(8.);
-        if let Some(items) = self.load_items(ui) {
-            self.grid(ui, items, false);
+        if let Some(items) = self.load_items(ui, View::Library) {
+            self.grid(ui, items, View::Library);
         }
     }
     pub(super) fn discover(&mut self, ui: &mut egui::Ui) {
@@ -375,15 +375,11 @@ impl App {
                 }
             });
             if self.chosen_group != Some(id) {
-                self.filter = Filter::All;
                 return;
             }
-            self.filter = Filter::Group(id);
-            let saved = std::mem::take(&mut self.search);
-            if let Some(items) = self.load_items(ui) {
-                self.grid(ui, items, false);
+            if let Some(items) = self.load_items(ui, View::Group(id)) {
+                self.grid(ui, items, View::Group(id));
             }
-            self.search = saved;
         }
     }
     pub(super) fn accounts(&mut self, ui: &mut egui::Ui) {
@@ -558,8 +554,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             if !allowed && ui.button("Allow automatic paste…").clicked() {
                 platform::macos_permissions::request_accessibility();
-                self.services.cancel_paste();
-                self.paste_at = None;
+                self.cancel_auto_paste();
                 self.message("Enable Picora in System Settings → Privacy & Security → Accessibility, then return here. Choose the sticker again after granting access.", false);
                 if let Err(error) = platform::macos_permissions::open_settings() {
                     self.message(format!("Could not open System Settings: {error}. Open Privacy & Security → Accessibility manually."), true);
@@ -570,8 +565,7 @@ impl App {
                 self.message(format!("Could not open System Settings: {error}. Open Privacy & Security → Accessibility manually."), true);
             }
             if ui.button("Check permission again").clicked() {
-                self.services.cancel_paste();
-                self.paste_at = None;
+                self.cancel_auto_paste();
                 self.message(if platform::macos_permissions::accessibility_allowed() {
                     "Accessibility is allowed. Return to your editor and choose the sticker again."
                 } else {

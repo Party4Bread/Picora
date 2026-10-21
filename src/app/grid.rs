@@ -97,14 +97,34 @@ impl App {
             response,
         }
     }
-    pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: Vec<LibrarySticker>, picker: bool) {
+    fn browse_state(&self, view: View) -> Option<&BrowseState> {
+        match view {
+            View::Library => Some(&self.library_state),
+            View::Picker => Some(&self.picker_state),
+            _ => None,
+        }
+    }
+    fn browse_state_mut(&mut self, view: View) -> Option<&mut BrowseState> {
+        match view {
+            View::Library => Some(&mut self.library_state),
+            View::Picker => Some(&mut self.picker_state),
+            _ => None,
+        }
+    }
+    pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: Vec<LibrarySticker>, view: View) {
+        let picker = view == View::Picker;
         if items.is_empty() {
             ui.add_space(32.);
-            if !self.search.trim().is_empty() {
+            if self
+                .browse_state(view)
+                .is_some_and(|s| !s.search.trim().is_empty())
+            {
                 ui.heading("No matching stickers");
                 ui.label("Try another search or clear it to see this collection.");
-                if ui.button("Clear search").clicked() {
-                    self.search.clear();
+                if ui.button("Clear search").clicked()
+                    && let Some(state) = self.browse_state_mut(view)
+                {
+                    state.search.clear();
                 }
             } else if self.packs.is_empty() {
                 ui.heading("Your library is empty");
@@ -118,22 +138,32 @@ impl App {
                 ui.heading("No stickers in this collection");
                 ui.label("Choose another pack or manage your stickers in the library.");
                 if ui.button("Show all stickers").clicked() {
-                    self.filter = Filter::All;
+                    if let Some(state) = self.browse_state_mut(view) {
+                        state.filter = Filter::All;
+                    } else {
+                        self.tab = Tab::Library;
+                        self.library_state.filter = Filter::All;
+                    }
                 }
             }
             return;
         }
         let columns = ((ui.available_width() + 8.) / 88.).floor().max(1.) as usize;
         if picker {
-            self.selected = self.selected.min(items.len() - 1);
+            self.picker_state.selected = self.picker_state.selected.min(items.len() - 1);
         }
         let popup_open = egui::Popup::is_any_open(ui.ctx());
         if picker && self.pending.is_none() && !popup_open {
-            self.selected = navigate(ui, self.selected, items.len(), columns);
+            self.picker_state.selected =
+                navigate(ui, self.picker_state.selected, items.len(), columns);
             if ui.input(|i| i.key_pressed(egui::Key::Enter))
                 && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))))
             {
-                self.choose(items[self.selected].clone(), CopyMode::Auto, true);
+                self.choose(
+                    items[self.picker_state.selected].clone(),
+                    CopyMode::Auto,
+                    true,
+                );
             }
         }
         let editing_text = ui.ctx().wants_keyboard_input();
@@ -157,7 +187,7 @@ impl App {
         });
         if navigation {
             scroll = scroll.vertical_scroll_offset(
-                (self.selected / columns) as f32 * (80. + ui.spacing().item_spacing.y),
+                (self.picker_state.selected / columns) as f32 * (80. + ui.spacing().item_spacing.y),
             );
         }
         scroll.show_rows(ui, 80., items.len().div_ceil(columns), |ui, rows| {
@@ -174,20 +204,27 @@ impl App {
                                     item.provider,
                                     &item.sticker.url,
                                     80.,
-                                    picker && n == self.selected,
+                                    picker && n == self.picker_state.selected,
                                 );
+                                r.response.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::WidgetType::Button,
+                                        true,
+                                        &item.sticker.label,
+                                    )
+                                });
                                 r.response.clone().on_hover_text(format!(
                                     "{}\n{} · {}\nRight-click for more",
                                     item.sticker.label, item.pack_title, item.provider
                                 ));
                                 if r.activated {
                                     if picker {
-                                        self.selected = n;
+                                        self.picker_state.selected = n;
                                     }
                                     self.choose(item.clone(), CopyMode::Auto, picker);
                                 }
                                 r.response
-                                    .context_menu(|ui| self.sticker_menu(ui, item, picker));
+                                    .context_menu(|ui| self.sticker_menu(ui, item, view));
                             });
                         });
                     }
@@ -195,13 +232,13 @@ impl App {
             }
         });
     }
-    fn sticker_menu(&mut self, ui: &mut egui::Ui, item: &LibrarySticker, picker: bool) {
+    fn sticker_menu(&mut self, ui: &mut egui::Ui, item: &LibrarySticker, view: View) {
         if ui.button("Copy still image").clicked() {
             self.choose(item.clone(), CopyMode::Still, false);
             ui.close();
         }
         if ui.button("Paste original file").clicked() {
-            self.choose(item.clone(), CopyMode::Original, picker);
+            self.choose(item.clone(), CopyMode::Original, view == View::Picker);
             ui.close();
         }
         ui.separator();
@@ -263,7 +300,16 @@ impl App {
                 ui.close();
             }
         }
-        if let Filter::Group(id) = self.filter {
+        let group = match view {
+            View::Group(id) => Some(id),
+            _ => self
+                .browse_state(view)
+                .and_then(|state| match state.filter {
+                    Filter::Group(id) => Some(id),
+                    _ => None,
+                }),
+        };
+        if let Some(id) = group {
             if ui.button("Move earlier").clicked() {
                 let r = self
                     .store

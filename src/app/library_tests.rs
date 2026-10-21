@@ -67,11 +67,9 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         activation,
         shortcut_text: settings.shortcut.clone(),
         settings,
-        filter: Filter::All,
-        picker_filter: Filter::Favorites,
-        picker_search: String::new(),
+        library_state: BrowseState::new(Filter::All),
+        picker_state: BrowseState::new(Filter::Favorites),
         tab: Tab::Library,
-        search: String::new(),
         query: String::new(),
         source: Provider::Dcinside,
         page: 1,
@@ -81,7 +79,6 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         library_open: true,
         picker_open: false,
         focus_search: true,
-        selected: 0,
         status: "Choose a sticker to copy and paste".into(),
         error: false,
         browsing: false,
@@ -193,8 +190,8 @@ fn favorite_button_populates_library_sidebar_before_download_finishes() {
     previous.title = "Previous favorite pack".into();
     app.store.save_favorite_pack(&previous).unwrap();
     app.refresh();
-    app.filter = Filter::Pack("arca:42".into());
-    app.search = "previous".into();
+    app.library_state.filter = Filter::Pack("arca:42".into());
+    app.library_state.search = "previous".into();
     for _ in 0..3 {
         frame(&mut app, &ctx, vec![]);
     }
@@ -209,7 +206,7 @@ fn favorite_button_populates_library_sidebar_before_download_finishes() {
     let entry =
         label(&output, "New favorite pack").expect("new pack appears in sidebar immediately");
     click(&mut app, &ctx, entry);
-    assert!(app.filter == Filter::Pack("arca:54950".into()));
+    assert!(app.library_state.filter == Filter::Pack("arca:54950".into()));
 }
 
 #[test]
@@ -280,9 +277,9 @@ fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
             ],
         );
     }
-    assert!(app.picker_filter == Filter::Pack("dcinside:41982".into()));
+    assert!(app.picker_state.filter == Filter::Pack("dcinside:41982".into()));
     assert!(
-        app.filter == Filter::All,
+        app.library_state.filter == Filter::All,
         "picker selection must not change library filter"
     );
     let output = render(&mut app, vec![]);
@@ -308,10 +305,10 @@ fn library_grid_does_not_change_picker_keyboard_selection() {
     pack.stickers.truncate(1);
     app.store.save_favorite_pack(&pack).unwrap();
     app.refresh();
-    app.selected = 20;
+    app.picker_state.selected = 20;
     frame(&mut app, &ctx, vec![]);
     assert_eq!(
-        app.selected, 20,
+        app.picker_state.selected, 20,
         "rendering library must not move picker selection"
     );
 }
@@ -375,7 +372,14 @@ fn picker_enter_does_not_copy_a_sticker_while_a_popup_is_open() {
         },
         |ctx| {
             egui::Popup::open_id(ctx, egui::Id::new("collection-menu"));
-            egui::CentralPanel::default().show(ctx, |ui| app.grid(ui, app.items().unwrap(), true));
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.grid(
+                    ui,
+                    app.items(&app.picker_state.filter, &app.picker_state.search)
+                        .unwrap(),
+                    View::Picker,
+                )
+            });
         },
     );
     assert!(
@@ -392,6 +396,7 @@ fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
         .build()
         .unwrap();
     let ctx = egui::Context::default();
+    ctx.enable_accesskit();
     let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
     let mut pack = crate::providers::dcinside::parse_detail(include_str!(
         "../../tests/fixtures/dc-detail.json"
@@ -406,19 +411,23 @@ fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
             label(&output, "Manage").is_none(),
             "no duplicated Manage button"
         );
-        let pos = output
-            .shapes
+        let bounds = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .unwrap()
+            .nodes
             .iter()
-            .find_map(|shape| match &shape.shape {
-                egui::epaint::Shape::Rect(r)
-                    if (r.rect.width() - 80.).abs() < 0.1
-                        && (r.rect.height() - 80.).abs() < 0.1 =>
-                {
-                    Some(r.rect.center())
-                }
-                _ => None,
+            .find_map(|(_, node)| {
+                (node.label() == Some(pack.stickers[0].label.as_str()))
+                    .then(|| node.bounds())
+                    .flatten()
             })
-            .expect("sticker tile");
+            .expect("accessible sticker button");
+        let pos = egui::pos2(
+            ((bounds.x0 + bounds.x1) / 2.) as f32,
+            ((bounds.y0 + bounds.y1) / 2.) as f32,
+        );
         for pressed in [true, false] {
             frame(
                 &mut app,
@@ -462,7 +471,7 @@ fn minimum_picker_keeps_custom_group_identity_visible() {
     let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
     let group = app.store.create_group("Work replies").unwrap();
     app.refresh();
-    app.picker_filter = Filter::Group(group);
+    app.picker_state.filter = Filter::Group(group);
     for _ in 0..3 {
         let output = ctx.run(
             egui::RawInput {
@@ -476,7 +485,7 @@ fn minimum_picker_keeps_custom_group_identity_visible() {
         );
         assert!(label(&output, "Work replies").is_some());
         assert!(label(&output, "Library").is_some());
-        assert!(app.filter == Filter::All);
+        assert!(app.library_state.filter == Filter::All);
         assert!(app.pending.is_none());
     }
 }
@@ -502,7 +511,7 @@ fn picker_accepts_repeated_korean_commits_without_preedit() {
                 ..Default::default()
             };
             let _ = ctx.run(input, |ctx| app.picker(ctx));
-            app.picker_search.clone()
+            app.picker_state.search.clone()
         };
         render(vec![]);
         render(vec![]);
@@ -848,12 +857,104 @@ fn failed_library_query_is_not_an_empty_collection() {
         .unwrap()
         .execute_batch("DROP TABLE recents")
         .unwrap();
-    app.filter = Filter::Recent;
-    assert!(app.items().is_err());
+    app.library_state.filter = Filter::Recent;
+    assert!(
+        app.items(&app.library_state.filter, &app.library_state.search)
+            .is_err()
+    );
     let output = ctx.run(egui::RawInput::default(), |ctx| {
         egui::CentralPanel::default().show(ctx, |ui| app.library_content(ui));
     });
     assert!(app.error);
     assert!(app.status.contains("Could not load stickers"));
     assert!(label(&output, "No stickers in this collection").is_none());
+}
+
+#[test]
+fn group_rendering_preserves_library_and_picker_queries() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let group = app.store.create_group("Test group").unwrap();
+    app.refresh();
+    app.chosen_group = Some(group);
+    app.library_state.filter = Filter::Recent;
+    app.library_state.search = "library query".into();
+    app.picker_state.search = "picker query".into();
+    let _ = ctx.run(Default::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| app.groups_ui(ui));
+    });
+    assert!(app.library_state.filter == Filter::Recent);
+    assert_eq!(app.library_state.search, "library query");
+    assert_eq!(app.picker_state.search, "picker query");
+    assert!(app.items(&Filter::Group(group), "").unwrap().is_empty());
+}
+
+#[test]
+fn copy_completion_respects_cancellation_modifiers_and_clipboard_failure() {
+    for case in ["success", "cancelled", "modifiers", "failure", "copy-only"] {
+        let root = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+        let pack = crate::providers::dcinside::parse_detail(include_str!(
+            "../../tests/fixtures/dc-detail.json"
+        ))
+        .unwrap();
+        app.store.save_favorite_pack(&pack).unwrap();
+        app.refresh();
+        let item = app.items(&Filter::All, "").unwrap().remove(0);
+        let interaction = app.services.paste_ticket();
+        app.picker_open = true;
+        app.pending = Some(PendingPaste {
+            interaction,
+            picker: None,
+            target: Some(Target(42)),
+            from_picker: true,
+            flow: PasteFlow::new(case != "copy-only", true),
+        });
+        if case == "cancelled" {
+            app.open_library();
+        }
+        app.services.bus.send(Event::Copied(if case == "failure" {
+            Err(anyhow::anyhow!("clipboard unavailable"))
+        } else {
+            Ok(item)
+        }));
+        let mut input = egui::RawInput::default();
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .focused = Some(true);
+        if case == "modifiers" {
+            input.modifiers.shift = true;
+        }
+        let _ = ctx.run(input, |ctx| app.handle_events(ctx));
+        assert!(app.pending.is_none(), "{case}");
+        assert_eq!(app.paste_at.is_some(), case == "success", "{case}");
+        assert_eq!(
+            app.picker_open,
+            matches!(case, "cancelled" | "failure"),
+            "{case}"
+        );
+        if case == "success" {
+            app.open_library();
+            assert!(
+                app.paste_at.is_none(),
+                "opening library cancels scheduled paste"
+            );
+        }
+        if case == "failure" {
+            assert!(app.error);
+            assert!(app.status.contains("clipboard unavailable"));
+        }
+    }
 }

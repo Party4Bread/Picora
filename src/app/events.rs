@@ -1,5 +1,44 @@
 use super::*;
 impl App {
+    fn copy_completed(&mut self, ctx: &egui::Context, result: Result<LibrarySticker>) {
+        let item = match result {
+            Ok(item) => item,
+            Err(error) => {
+                self.pending = None;
+                self.message(format!("Could not copy: {error:#}"), true);
+                return;
+            }
+        };
+        let recent = self.store.record_recent(&item.pack_key, &item.sticker.id);
+        if let Some(mut pending) = self.pending.take() {
+            if !pending.interaction.valid() || ctx.input(|i| i.modifiers.any()) {
+                pending.flow.cancel_auto();
+            }
+            if pending.flow.copied().is_ok() {
+                if pending.from_picker && pending.interaction.valid() {
+                    self.set_picker_hidden(ctx);
+                }
+                if matches!(pending.flow.hidden(), Ok(Action::Paste)) {
+                    if let Some(target) = pending.target {
+                        self.paste_at = Some((
+                            Instant::now() + Duration::from_millis(180),
+                            target,
+                            pending.picker,
+                        ));
+                        ctx.request_repaint_after(Duration::from_millis(180));
+                    }
+                } else {
+                    self.message("Copied — paste with Ctrl+V / Cmd+V", false);
+                }
+            }
+        }
+        if let Err(error) = recent {
+            self.message(
+                format!("Copied, but could not update Recent: {error:#}"),
+                true,
+            );
+        }
+    }
     pub(super) fn handle_events(&mut self, ctx: &egui::Context) {
         if let Some(p) = &mut self.pending
             && p.from_picker
@@ -81,20 +120,7 @@ impl App {
                         Err(e) => { self.failed.insert(url, e.to_string()); }
                     }
                 }
-                Event::Copied(result) => match result {
-                    Ok(item) => {
-                        let _ = self.store.record_recent(&item.pack_key, &item.sticker.id);
-                        if let Some(mut pending) = self.pending.take()
-                            && pending.flow.copied().is_ok() {
-                            if !pending.interaction.valid() || ctx.input(|i| i.modifiers.any()) { pending.flow.cancel_auto(); }
-                            if pending.from_picker && pending.interaction.valid() { self.hide_picker(ctx); }
-                            if matches!(pending.flow.hidden(), Ok(Action::Paste)) {
-                                if let Some(target) = pending.target { self.paste_at = Some((Instant::now() + Duration::from_millis(180), target, pending.picker)); }
-                            } else { self.message("Copied — paste with Ctrl+V / Cmd+V", false); }
-                        }
-                    }
-                    Err(e) => { self.pending = None; self.message(format!("Could not copy: {e:#}"), true); }
-                },
+                Event::Copied(result) => self.copy_completed(ctx, result),
                 #[cfg(target_os = "macos")]
                 Event::NativePaste(target, ticket) => {
                     self.services.bus.send(Event::Pasted(focus::send_paste(target, ticket)));

@@ -34,6 +34,27 @@ enum Filter {
     Pack(String),
     Group(i64),
 }
+struct BrowseState {
+    filter: Filter,
+    search: String,
+    selected: usize,
+}
+impl BrowseState {
+    fn new(filter: Filter) -> Self {
+        Self {
+            filter,
+            search: String::new(),
+            selected: 0,
+        }
+    }
+}
+#[derive(Clone, Copy, PartialEq)]
+enum View {
+    Library,
+    Picker,
+    Group(i64),
+    Preview,
+}
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Library,
@@ -66,11 +87,9 @@ pub struct App {
     settings: Settings,
     packs: Vec<SavedPack>,
     groups: Vec<Group>,
-    filter: Filter,
-    picker_filter: Filter,
-    picker_search: String,
+    library_state: BrowseState,
+    picker_state: BrowseState,
     tab: Tab,
-    search: String,
     query: String,
     source: Provider,
     page: u32,
@@ -80,7 +99,6 @@ pub struct App {
     library_open: bool,
     picker_open: bool,
     focus_search: bool,
-    selected: usize,
     status: String,
     error: bool,
     browsing: bool,
@@ -153,11 +171,9 @@ impl App {
             activation,
             shortcut_text: settings.shortcut.clone(),
             settings,
-            filter: Filter::All,
-            picker_filter: Filter::Favorites,
-            picker_search: String::new(),
+            library_state: BrowseState::new(Filter::All),
+            picker_state: BrowseState::new(Filter::Favorites),
             tab: Tab::Library,
-            search: String::new(),
             query: String::new(),
             source: Provider::Dcinside,
             page: 1,
@@ -167,7 +183,6 @@ impl App {
             library_open: library,
             picker_open: !background && !library,
             focus_search: true,
-            selected: 0,
             status: "Choose a sticker to copy and paste".into(),
             error: false,
             browsing: false,
@@ -265,9 +280,15 @@ impl App {
             };
         }
     }
-    fn show_picker(&mut self, ctx: &egui::Context) {
+    fn cancel_auto_paste(&mut self) {
         self.paste_at = None;
         self.services.cancel_paste();
+        if let Some(pending) = &mut self.pending {
+            pending.flow.cancel_auto();
+        }
+    }
+    fn show_picker(&mut self, ctx: &egui::Context) {
+        self.cancel_auto_paste();
         if self.picker_open {
             self.hide_picker(ctx);
             return;
@@ -284,16 +305,15 @@ impl App {
         };
         self.picker_open = true;
         self.focus_search = true;
-        self.selected = 0;
+        self.picker_state.selected = 0;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
     fn hide_picker(&mut self, ctx: &egui::Context) {
-        self.paste_at = None;
-        self.services.cancel_paste();
-        if let Some(p) = &mut self.pending {
-            p.flow.cancel_auto();
-        }
+        self.cancel_auto_paste();
+        self.set_picker_hidden(ctx);
+    }
+    fn set_picker_hidden(&mut self, ctx: &egui::Context) {
         self.picker_open = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
     }
@@ -302,11 +322,7 @@ impl App {
             egui::ViewportId::from_hash_of("library"),
             egui::ViewportCommand::Focus,
         );
-        self.paste_at = None;
-        self.services.cancel_paste();
-        if let Some(p) = &mut self.pending {
-            p.flow.cancel_auto();
-        }
+        self.cancel_auto_paste();
         self.library_open = true;
         self.target = None;
     }
@@ -324,8 +340,8 @@ impl App {
         self.services
             .browse(self.source, self.query.clone(), self.page, self.catalog_id);
     }
-    fn collection_title(&self) -> String {
-        match &self.filter {
+    fn collection_title(&self, filter: &Filter) -> String {
+        match filter {
             Filter::All => "All stickers".into(),
             Filter::Favorites => "Favorites".into(),
             Filter::Recent => "Recent".into(),
@@ -343,8 +359,8 @@ impl App {
                 .unwrap_or_else(|| "All stickers".into()),
         }
     }
-    fn items(&self) -> Result<Vec<LibrarySticker>> {
-        let items = match &self.filter {
+    fn items(&self, filter: &Filter, search: &str) -> Result<Vec<LibrarySticker>> {
+        let items = match filter {
             Filter::Group(id) => self.store.group_items(*id)?,
             Filter::Recent => self.store.recents()?,
             Filter::Favorites => self.store.favorite_items()?,
@@ -365,7 +381,7 @@ impl App {
                 })
                 .collect(),
         };
-        let query = self.search.trim().to_lowercase();
+        let query = search.trim().to_lowercase();
         Ok(items
             .into_iter()
             .filter(|s| {
@@ -375,8 +391,14 @@ impl App {
             })
             .collect())
     }
-    fn load_items(&mut self, ui: &mut egui::Ui) -> Option<Vec<LibrarySticker>> {
-        match self.items() {
+    fn load_items(&mut self, ui: &mut egui::Ui, view: View) -> Option<Vec<LibrarySticker>> {
+        let result = match view {
+            View::Library => self.items(&self.library_state.filter, &self.library_state.search),
+            View::Picker => self.items(&self.picker_state.filter, &self.picker_state.search),
+            View::Group(id) => self.items(&Filter::Group(id), ""),
+            View::Preview => unreachable!("Previews supply their own stickers"),
+        };
+        match result {
             Ok(items) => Some(items),
             Err(error) => {
                 let message = format!("Could not load stickers: {error:#}");
@@ -425,8 +447,6 @@ impl App {
         });
     }
     fn picker(&mut self, ctx: &egui::Context) {
-        std::mem::swap(&mut self.filter, &mut self.picker_filter);
-        std::mem::swap(&mut self.search, &mut self.picker_search);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -436,9 +456,9 @@ impl App {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     let title = if ctx.content_rect().height() < 400.
-                        && matches!(self.filter, Filter::Pack(_) | Filter::Group(_))
+                        && matches!(self.picker_state.filter, Filter::Pack(_) | Filter::Group(_))
                     {
-                        self.collection_title()
+                        self.collection_title(&self.picker_state.filter)
                     } else {
                         "Picora".to_owned()
                     };
@@ -470,7 +490,7 @@ impl App {
                 }
                 let search = ui.add_sized(
                     [ui.available_width(), 36.],
-                    egui::TextEdit::singleline(&mut self.search)
+                    egui::TextEdit::singleline(&mut self.picker_state.search)
                         .hint_text("Search stickers…")
                         .margin(egui::vec2(12., 8.))
                         .desired_width(f32::INFINITY),
@@ -491,10 +511,10 @@ impl App {
                         ("All", Filter::All),
                     ] {
                         if ui
-                            .selectable_value(&mut self.filter, filter, label)
+                            .selectable_value(&mut self.picker_state.filter, filter, label)
                             .changed()
                         {
-                            self.selected = 0;
+                            self.picker_state.selected = 0;
                         }
                     }
                     let collection_label = if ui.max_rect().width() < 380. {
@@ -514,13 +534,13 @@ impl App {
                             for p in &self.packs {
                                 if ui
                                     .selectable_value(
-                                        &mut self.filter,
+                                        &mut self.picker_state.filter,
                                         Filter::Pack(p.pack.reference.key()),
                                         &p.pack.title,
                                     )
                                     .changed()
                                 {
-                                    self.selected = 0;
+                                    self.picker_state.selected = 0;
                                 }
                             }
                             if !self.groups.is_empty() {
@@ -529,13 +549,13 @@ impl App {
                                 for g in &self.groups {
                                     if ui
                                         .selectable_value(
-                                            &mut self.filter,
+                                            &mut self.picker_state.filter,
                                             Filter::Group(g.id),
                                             &g.name,
                                         )
                                         .changed()
                                     {
-                                        self.selected = 0;
+                                        self.picker_state.selected = 0;
                                     }
                                 }
                             }
@@ -560,13 +580,13 @@ impl App {
                                                         p.pack.reference.provider,
                                                         &p.pack.thumbnail,
                                                         38.,
-                                                        self.filter == filter,
+                                                        self.picker_state.filter == filter,
                                                     );
                                                 thumbnail.response.on_hover_text(&p.pack.title);
                                                 if thumbnail.activated
                                                 {
-                                                    self.filter = filter;
-                                                    self.selected = 0;
+                                                    self.picker_state.filter = filter;
+                                                    self.picker_state.selected = 0;
                                                 }
                                             });
                                         }
@@ -575,12 +595,12 @@ impl App {
                         });
                 }
                 ui.add_space(4.);
-                let Some(items) = self.load_items(ui) else { return; };
+                let Some(items) = self.load_items(ui, View::Picker) else { return; };
                 if ctx.content_rect().height() >= 400. {
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::Label::new(
-                                RichText::new(self.collection_title()).small().strong(),
+                                RichText::new(self.collection_title(&self.picker_state.filter)).small().strong(),
                             )
                             .truncate(),
                         );
@@ -588,10 +608,8 @@ impl App {
                     });
                     ui.add_space(4.);
                 }
-                self.grid(ui, items, true);
+                self.grid(ui, items, View::Picker);
             });
-        std::mem::swap(&mut self.filter, &mut self.picker_filter);
-        std::mem::swap(&mut self.search, &mut self.picker_search);
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.hide_picker(ctx);
         }
@@ -615,8 +633,7 @@ impl eframe::App for App {
             });
         }
         if self.updates.poll(&self.services.runtime, ctx) {
-            self.services.cancel_paste();
-            self.paste_at = None;
+            self.cancel_auto_paste();
             self.pending = None;
             self.quit = true;
         }
@@ -624,8 +641,7 @@ impl eframe::App for App {
             self.updates.state,
             crate::update::controller::State::HandingOff
         ) {
-            self.services.cancel_paste();
-            self.paste_at = None;
+            self.cancel_auto_paste();
             self.pending = None;
         }
         self.handle_events(ctx);
