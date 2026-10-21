@@ -1,6 +1,8 @@
 use super::{
     Action, App, Duration, Event, Instant, LibrarySticker, Result, Shortcut, Visual, egui,
 };
+#[cfg(target_os = "macos")]
+use super::{Tab, focus, platform};
 impl App {
     fn copy_completed(&mut self, ctx: &egui::Context, result: Result<LibrarySticker>) {
         let item = match result {

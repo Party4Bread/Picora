@@ -219,7 +219,7 @@ impl App {
         if platform::is_wayland() {
             app.services.enable_wayland(true);
         }
-        match maketray() {
+        match make_tray() {
             Ok(tray) => app.tray = Some(tray),
             Err(e) => {
                 app.library_open = true;
@@ -686,7 +686,7 @@ fn apply_theme(ctx: &egui::Context, theme: &str) {
         _ => egui::ThemePreference::System,
     });
 }
-fn maketray() -> Result<tray_icon::TrayIcon> {
+fn make_tray() -> Result<tray_icon::TrayIcon> {
     use tray_icon::{
         Icon, TrayIconBuilder,
         menu::{Menu, MenuItem},
