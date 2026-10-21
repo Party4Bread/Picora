@@ -279,7 +279,7 @@ impl App {
                             ready_shortcut,
                             persist,
                             Ok(()),
-                        ))
+                        ));
                     },
                     move || activate.send(Event::Show),
                 )
