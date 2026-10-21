@@ -5,13 +5,13 @@
 //! | Command | Completion | Correlation |
 //! | --- | --- | --- |
 //! | `browse`, `preview` | `Catalog`, `Preview` | caller-supplied request ID |
-//! | `media` | `Media` | asset URL and animation request |
+//! | `request_media_preview` | `Media` | asset URL and animation request |
 //! | `download_pack` | `PackDownloaded` | returned pack; `Progress` is informational |
 //! | `copy`, `paste` | `Copied`, `Pasted` | one in-flight UI copy/paste operation |
 //! | `login`, `check_arca` | `Login` | shared account status updated before completion |
 //! | `enable_wayland` | `Wayland` | session installed before notification; no event if no saved grant |
 //!
-//! `asset` is awaited work: its caller receives the asset or error directly.
+//! `load_asset` is awaited work: its caller receives the asset or error directly.
 //! Construction and `logout` perform synchronous credential-store I/O; `logout`
 //! resets local account state even if deleting the persisted credentials fails.
 //! On macOS, `NativePaste` transfers keyboard execution to the UI thread before
@@ -147,7 +147,7 @@ impl Services {
             s.bus.send(Event::Preview(id, result));
         });
     }
-    pub async fn asset(&self, p: Provider, url: &str) -> Result<Asset> {
+    pub async fn load_asset(&self, p: Provider, url: &str) -> Result<Asset> {
         let _permit = self.semaphore.acquire().await?;
         let cache = self.cache.clone();
         let key = url.to_owned();
@@ -159,14 +159,14 @@ impl Services {
         let url = url.to_owned();
         tokio::task::spawn_blocking(move || cache.save(&url, &bytes)).await?
     }
-    pub fn media(&self, p: Provider, url: String, animate: bool) {
+    pub fn request_media_preview(&self, p: Provider, url: String, animate: bool) {
         let s = self.clone();
         self.runtime.spawn(async move {
             let Ok(permit) = s.decode_slots.clone().acquire_owned().await else {
                 return;
             };
             let result = async {
-                let asset = s.asset(p, &url).await?;
+                let asset = s.load_asset(p, &url).await?;
                 let a = asset.clone();
                 let decoded =
                     tokio::task::spawn_blocking(move || crate::media::preview_asset(&a, animate))
@@ -188,7 +188,7 @@ impl Services {
                         i + 1,
                         pack.stickers.len()
                     )));
-                    s.asset(pack.reference.provider, &sticker.url).await?;
+                    s.load_asset(pack.reference.provider, &sticker.url).await?;
                 }
                 Ok(pack)
             }
@@ -200,7 +200,7 @@ impl Services {
         let s = self.clone();
         self.runtime.spawn(async move {
             let result = async {
-                let asset = s.asset(item.provider, &item.sticker.url).await?;
+                let asset = s.load_asset(item.provider, &item.sticker.url).await?;
                 let cache = s.cache.clone();
                 let (asset, original) =
                     tokio::task::spawn_blocking(move || cache.prepare_copy(asset, mode)).await??;
@@ -288,42 +288,55 @@ impl Services {
     pub fn login(&self) {
         let s = self.clone();
         self.runtime.spawn(async move {
-            let result = async {
-                let cookies = crate::auth::login(crate::auth::load().unwrap_or_default()).await?;
-                let repo = Repository::new(Provider::Arca)?;
-                repo.set_cookies(&cookies);
-                // Keep the usable session even if a catalog parser needs updating.
-                s.repos.lock().unwrap()[1] = repo.clone();
-                let persisted =
-                    tokio::task::spawn_blocking(move || crate::auth::save(&cookies)).await?;
-                let saved = persisted.is_ok();
-                let storage_error = persisted
-                    .err()
-                    .map(|e| format!("Could not save the session: {e:#}"));
-                *s.account_status.lock().unwrap() = account::AccountStatus {
-                    has_session: true,
-                    saved,
-                    check: account::CheckState::Checking,
-                    storage_error,
-                };
-                s.bus.ctx.request_repaint();
-                let check = repo
-                    .browse("", 1)
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| format!("{e:#}"));
-                s.account_status.lock().unwrap().finish_check(check);
-                Ok(s.account_status.lock().unwrap().label().to_owned())
-            }
+            s.login_with(
+                crate::auth::login(crate::auth::load().unwrap_or_default()),
+                |cookies| async move {
+                    tokio::task::spawn_blocking(move || crate::auth::save(&cookies)).await?
+                },
+                |repo| async move { repo.browse("", 1).await.map(|_| ()) },
+            )
             .await;
-            if let Err(e) = &result {
-                s.account_status
-                    .lock()
-                    .unwrap()
-                    .finish_check(Err(format!("{e:#}")));
-            }
-            s.bus.send(Event::Login(result));
         });
+    }
+    async fn login_with<P, V>(
+        &self,
+        sign_in: impl std::future::Future<Output = Result<Vec<String>>>,
+        persist: impl FnOnce(Vec<String>) -> P,
+        verify: impl FnOnce(Repository) -> V,
+    ) where
+        P: std::future::Future<Output = Result<()>>,
+        V: std::future::Future<Output = Result<()>>,
+    {
+        let result = async {
+            let cookies = sign_in.await?;
+            let repo = Repository::new(Provider::Arca)?;
+            repo.set_cookies(&cookies);
+            // Keep the usable session even if persistence or verification fails.
+            self.repos.lock().unwrap()[1] = repo.clone();
+            let persisted = persist(cookies).await;
+            let saved = persisted.is_ok();
+            let storage_error = persisted
+                .err()
+                .map(|e| format!("Could not save the session: {e:#}"));
+            *self.account_status.lock().unwrap() = account::AccountStatus {
+                has_session: true,
+                saved,
+                check: account::CheckState::Checking,
+                storage_error,
+            };
+            self.bus.ctx.request_repaint();
+            let check = verify(repo).await.map_err(|e| format!("{e:#}"));
+            self.account_status.lock().unwrap().finish_check(check);
+            Ok(self.account_status.lock().unwrap().label().to_owned())
+        }
+        .await;
+        if let Err(e) = &result {
+            self.account_status
+                .lock()
+                .unwrap()
+                .finish_check(Err(format!("{e:#}")));
+        }
+        self.bus.send(Event::Login(result));
     }
     pub fn check_arca(&self) {
         self.account_status.lock().unwrap().check = account::CheckState::Checking;
@@ -344,8 +357,11 @@ impl Services {
         });
     }
     pub fn logout(&self) -> Result<()> {
+        self.logout_with(crate::auth::forget)
+    }
+    fn logout_with(&self, forget: impl FnOnce() -> Result<()>) -> Result<()> {
         self.repos.lock().unwrap()[1] = Repository::new(Provider::Arca)?;
-        let result = crate::auth::forget();
+        let result = forget();
         let mut status = self.account_status.lock().unwrap();
         *status = account::AccountStatus::default();
         if let Err(e) = &result {

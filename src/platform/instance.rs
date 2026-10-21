@@ -76,7 +76,12 @@ impl Instance {
         } else {
             socket.to_fs_name::<GenericFilePath>()?
         };
-        if lock.try_lock_exclusive().is_err() {
+        if let Err(error) = lock.try_lock_exclusive() {
+            if error.raw_os_error() != fs2::lock_contended_error().raw_os_error() {
+                return Err(error).with_context(|| {
+                    format!("Cannot lock {}", root.join("instance.lock").display())
+                });
+            }
             if background {
                 return Ok(None);
             }

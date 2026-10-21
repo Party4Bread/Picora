@@ -1,5 +1,7 @@
 use anyhow::{Result, bail};
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+/// Native recipient identity. Wayland uses `Target(0)` as a sentinel because
+/// this API cannot inspect or control individual Wayland windows.
 #[derive(Debug, Clone, Copy)]
 pub struct Target(pub u64);
 #[must_use]
@@ -33,7 +35,8 @@ pub fn capture() -> Option<Target> {
         None
     }
 }
-/// Capture the recipient, excluding Picora's own library and picker windows.
+/// Capture the recipient, excluding Picora's windows on Windows, macOS, and X11.
+/// On Wayland, returns the sentinel without identifying or excluding any window.
 #[must_use]
 pub fn capture_external() -> Option<Target> {
     let target = capture()?;
@@ -84,7 +87,10 @@ pub fn capture_external() -> Option<Target> {
     Some(target)
 }
 /// # Errors
-/// Returns an error if the target is invalid, has closed, or the window system refuses focus.
+/// Restore the native recipient on Windows, macOS, or X11. Wayland is a successful
+/// no-op; the compositor controls focus after the picker closes.
+///
+/// Returns an error if native target lookup or focus restoration fails.
 pub fn restore(target: Target) -> Result<()> {
     #[cfg(target_os = "windows")]
     {

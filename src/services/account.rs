@@ -81,3 +81,119 @@ mod tests {
         assert_eq!(status.label(), "Connected · this session only");
     }
 }
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use crate::{
+        media::MediaCache,
+        model::Provider,
+        services::{Bus, Event, Services},
+    };
+    use std::sync::mpsc;
+
+    #[test]
+    fn login_preserves_session_across_storage_and_verification_failures() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        for (save_ok, verify_ok) in [(true, true), (false, true), (true, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let (tx, rx) = mpsc::channel();
+            let services = Services::with_session(
+                rt.handle().clone(),
+                MediaCache::new(dir.path().into()).unwrap(),
+                Bus {
+                    tx,
+                    ctx: Default::default(),
+                },
+                Ok(vec![]),
+            )
+            .unwrap();
+            rt.block_on(services.login_with(
+                async { Ok(vec!["session=test-session; Path=/; Secure".into()]) },
+                |cookies| async move {
+                    assert_eq!(cookies.len(), 1);
+                    if save_ok {
+                        Ok(())
+                    } else {
+                        anyhow::bail!("credential store locked")
+                    }
+                },
+                |repo| async move {
+                    assert_eq!(repo.cookie("session").as_deref(), Some("test-session"));
+                    if verify_ok {
+                        Ok(())
+                    } else {
+                        anyhow::bail!("verification required")
+                    }
+                },
+            ));
+            assert_eq!(
+                services.repo(Provider::Arca).cookie("session").as_deref(),
+                Some("test-session")
+            );
+            let status = services.account_status.lock().unwrap().clone();
+            assert!(status.has_session);
+            assert_eq!(status.saved, save_ok);
+            assert_eq!(status.verified(), verify_ok);
+            assert_eq!(status.storage_error.is_some(), !save_ok);
+            assert_eq!(status.error().is_some(), !verify_ok);
+            let Event::Login(result) = rx.try_recv().unwrap() else {
+                panic!("missing login completion")
+            };
+            assert_eq!(result.unwrap(), status.label());
+            assert!(rx.try_recv().is_err());
+
+            let error = services
+                .logout_with(|| anyhow::bail!("deletion denied"))
+                .unwrap_err();
+            assert!(error.to_string().contains("deletion denied"));
+            assert!(services.repo(Provider::Arca).cookie("session").is_none());
+            let status = services.account_status.lock().unwrap().clone();
+            assert!(!status.has_session);
+            assert!(status.saved);
+            assert!(status.error().unwrap().contains("Disconnected locally"));
+            services.logout_with(|| Ok(())).unwrap();
+            assert_eq!(
+                services.account_status.lock().unwrap().label(),
+                "Not connected"
+            );
+        }
+    }
+
+    #[test]
+    fn failed_sign_in_emits_error_without_saving_or_verifying() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let services = Services::with_session(
+            rt.handle().clone(),
+            MediaCache::new(dir.path().into()).unwrap(),
+            Bus {
+                tx,
+                ctx: Default::default(),
+            },
+            Ok(vec![]),
+        )
+        .unwrap();
+        rt.block_on(services.login_with(
+            async { anyhow::bail!("sign-in cancelled") },
+            |_| async { panic!("must not persist a failed sign-in") },
+            |_| async { panic!("must not verify a failed sign-in") },
+        ));
+        assert!(!services.account_status.lock().unwrap().has_session);
+        let Event::Login(result) = rx.try_recv().unwrap() else {
+            panic!("missing login completion")
+        };
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("sign-in cancelled")
+        );
+    }
+}

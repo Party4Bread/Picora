@@ -184,7 +184,9 @@ impl MediaCache {
         self.root.join(hex::encode(Sha256::digest(url.as_bytes())))
     }
     /// # Errors
-    /// Returns an error on cache locking or filesystem read failures. Missing or corrupt assets are cache misses; metadata migration failure does not invalidate a verified asset.
+    /// Returns an error on cache locking, completion-marker reads, or legacy-validation reads.
+    /// Missing, corrupt, or unreadable asset files found during hash verification are cache misses.
+    /// Metadata migration failure does not invalidate a verified asset.
     pub fn cached(&self, url: &str) -> Result<Option<Asset>> {
         let _guard = self
             .disk

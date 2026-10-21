@@ -52,7 +52,8 @@ impl App {
                 && self.inflight.insert(url.into())
             {
                 // Restore animation on demand while retaining the still on screen.
-                self.services.media(provider, url.into(), true);
+                self.services
+                    .request_media_preview(provider, url.into(), true);
             }
             let frame = if response.hovered() && v.frames.len() > 1 {
                 let (frame, wait) =
@@ -92,7 +93,8 @@ impl App {
                 egui::Stroke::new(1.5_f32, ui.visuals().weak_text_color()),
             );
             if !url.is_empty() && self.inflight.insert(url.into()) {
-                self.services.media(provider, url.into(), false);
+                self.services
+                    .request_media_preview(provider, url.into(), false);
             }
         }
         Thumbnail {

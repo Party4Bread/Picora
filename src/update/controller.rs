@@ -206,4 +206,100 @@ mod tests {
         assert!(!c.poll(rt.handle(), &egui::Context::default()));
         assert!(matches!(c.state, State::Idle));
     }
+    fn update() -> AvailableUpdate {
+        AvailableUpdate {
+            version: "99.0.0".into(),
+            notes: String::new(),
+            asset: super::super::release::ReleaseAsset {
+                target: Target::current().unwrap(),
+                name: "offline-test.zip".into(),
+                size: 100,
+                sha256: "0".repeat(64),
+            },
+            url: "https://invalid.example/offline-test.zip".into(),
+        }
+    }
+
+    fn staged() -> Event {
+        let dir = tempfile::tempdir().unwrap();
+        let staged = StagedUpdate {
+            root: dir.path().join("staged"),
+            files: vec!["picora".into()],
+            target: Target::current().unwrap(),
+        };
+        Event::Staged(Ok((update(), dir, staged)))
+    }
+
+    #[test]
+    fn commands_and_completions_follow_update_lifecycle() {
+        // Spawned network/helper tasks cannot execute unless this runtime is driven.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut c = Controller::default();
+        c.download(rt.handle(), &ctx);
+        assert!(matches!(c.state, State::Idle));
+        assert!(c.task.is_none());
+        c.check(rt.handle(), &ctx);
+        let id = c.generation;
+        assert!(c.busy());
+        c.check(rt.handle(), &ctx);
+        c.download(rt.handle(), &ctx);
+        assert_eq!(c.generation, id);
+        c.tx.send((id, Event::Checked(Ok(None)))).unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::Current));
+        c.check(rt.handle(), &ctx);
+        c.tx.send((c.generation, Event::Checked(Ok(Some(update())))))
+            .unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::Available(_)));
+        c.download(rt.handle(), &ctx);
+        assert!(matches!(c.state, State::Downloading(0, 100)));
+        c.tx.send((c.generation, Event::Progress(50, 100))).unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::Downloading(50, 100)));
+        c.tx.send((c.generation, staged())).unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::HandingOff));
+        let id = c.generation;
+        c.cancel();
+        c.check(rt.handle(), &ctx);
+        c.download(rt.handle(), &ctx);
+        assert_eq!(c.generation, id);
+        assert!(matches!(c.state, State::HandingOff));
+        c.tx.send((id, Event::Ready(Err(anyhow::anyhow!("helper rejected")))))
+            .unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(&c.state, State::Error(message) if message == "helper rejected"));
+        c.cancel();
+        assert!(matches!(c.state, State::Idle));
+    }
+
+    #[test]
+    fn stale_staging_cannot_handoff_and_current_failures_are_visible() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut c = Controller::default();
+        c.state = State::Available(update());
+        c.download(rt.handle(), &ctx);
+        let id = c.generation;
+        c.cancel();
+        c.tx.send((id, Event::Progress(100, 100))).unwrap();
+        c.tx.send((id, staged())).unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::Idle));
+        assert!(c.task.is_none());
+        for event in [
+            Event::Checked(Err(anyhow::anyhow!("check failed"))),
+            Event::Staged(Err(anyhow::anyhow!("staging failed"))),
+        ] {
+            c.tx.send((c.generation, event)).unwrap();
+            assert!(!c.poll(rt.handle(), &ctx));
+            assert!(matches!(&c.state, State::Error(message) if message.ends_with("failed")));
+        }
+    }
 }
