@@ -1,4 +1,3 @@
-/// What Picora has actually established about the Arca session.
 #[derive(Clone, Default)]
 pub struct AccountStatus {
     pub has_session: bool,

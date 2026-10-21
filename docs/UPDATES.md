@@ -27,4 +27,4 @@ Downloads use HTTPS and trust this GitHub repository's release metadata. Checksu
 
 ## Verification
 
-`cargo test --locked` includes native headless helper tests through `examples/update_test_child.rs`: real parent exit, replacement, acknowledgement, rollback on crashed or hung startup, and external recovery after an interrupted transaction. Filesystem and archive tests cover preservation, recovery and unsafe paths. `python -m unittest discover -s scripts -p test_update_manifest.py` checks the release contract. These tests do not substitute for a full native desktop update smoke test on each OS; consult the implementation report for which runs were actually observed.
+`cargo test --locked` includes native headless helper tests through `tests/update_process.rs`: real parent exit, replacement, acknowledgement, rollback on crashed or hung startup, and external recovery after an interrupted transaction. Filesystem and archive tests cover preservation, recovery and unsafe paths. `python -m unittest discover -s scripts -p test_update_manifest.py` checks the release contract. These tests do not substitute for a full native desktop update smoke test on each OS.

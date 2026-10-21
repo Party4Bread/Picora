@@ -1,75 +1,65 @@
-# Picora — Desktop Sticker Picker for Windows, macOS & Linux
+# Picora — DCInside & Arca Sticker Picker
 
-**Your favorite reactions, one shortcut away.** Picora is a Rust desktop sticker picker inspired by the Windows emoji panel. Browse **DCInside stickers (디시콘)** and **Arca stickers (아카콘)**, organize your favorites, and copy or paste image reactions into apps that accept clipboard images or file attachments.
+**A desktop sticker picker for Windows, macOS, and Linux, built in Rust.** Search **DCInside stickers (디시콘)** and **Arca Live stickers (아카콘)**, save your favorites, and paste image reactions into apps that accept clipboard images or attachments.
 
-Press **Ctrl+Shift+Space**, find a sticker, and choose it. Picora copies it, hides the picker, and attempts to paste into your previous app. It never presses Enter to send your message.
+Like the Windows emoji panel, Picora opens with a shortcut: **Ctrl+Shift+Space**. Choose a sticker to copy it and attempt to paste into your previous app. Picora never presses Enter to send a message.
 
-**[Download Picora](https://github.com/Party4Bread/Picora/releases/latest)** · **[Report a bug](https://github.com/Party4Bread/Picora/issues)** · **[Compatibility](docs/COMPATIBILITY.md)**
+**[Download the latest release](https://github.com/Party4Bread/Picora/releases/latest)** · **[Report a bug](https://github.com/Party4Bread/Picora/issues)** · **[Compatibility](docs/COMPATIBILITY.md)**
 
-## Why Picora?
+디시콘·아카콘을 데스크톱에서 검색하고, 즐겨찾기와 사용자 그룹으로 정리하세요. 단축키로 스티커를 열어 이미지나 파일로 붙여넣을 수 있습니다. Windows, macOS, Linux를 지원합니다.
 
-- **Bring your sticker collections to the desktop.** Browse DCInside and Arca packs from one library instead of hunting for individual image files.
-- **Find the right reaction quickly.** Search sticker and pack titles, switch collections from thumbnail shortcuts, and use keyboard navigation in a compact picker.
-- **Make the library yours.** Favorite individual stickers, create custom groups, and manage stickers with a right-click. Recent shows recently used stickers first, followed by newly added ones.
-- **Keep still and animated reactions.** Copy a PNG frame or paste an animated sticker as a file. Original-file mode preserves the source bytes; playback and attachment behavior depend on the receiving app.
-- **Keep downloaded stickers close.** Cached media and library metadata stay on your computer, so downloaded stickers remain available offline.
-- **Stay up to date.** Install GitHub releases through **Settings → Updates → Update and restart**, preserving your library and settings.
+## Features
 
-Picora is written in Rust with a native egui interface, light and dark themes, and bundled Korean typography.
+- **Search sticker packs:** browse DCInside and Arca Live, or import a pack by URL.
+- **Organize your library:** favorite individual stickers, create custom groups, and manage stickers with a right-click.
+- **Find recent stickers:** recently used stickers appear first, followed by newly added ones.
+- **Use animated reactions:** hover to preview; copy a still image or paste an animated file. Downloaded stickers remain available offline.
+- **Work from the keyboard:** configurable global shortcut and arrow-key navigation, with light and dark themes.
+- **Update in the app:** install GitHub releases from **Settings → Updates** while preserving your library.
 
 ## Download and install
 
-Get the latest build from **[GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest)**. Choose the asset for your platform:
-
-| Platform | Download | Installation |
+| Platform | Release asset | Install |
 | --- | --- | --- |
-| Windows x64 | `picora-<version>-windows-x64-setup.exe` | Run the installer. Installs for your account without administrator rights. A portable ZIP is also available. |
-| macOS, Apple Silicon | `picora-<version>-macos-aarch64.dmg` | Open the DMG and drag Picora to Applications. See the signing limitation below. |
-| Linux x64 | `picora-<version>-linux-x86_64.tar.gz` | Extract and run `Picora/picora --library`. Requires the system libraries listed under building from source. |
+| Windows x64 | `picora-<version>-windows-x64-setup.exe` | Run the installer. A portable ZIP is also available. |
+| macOS, Apple Silicon | `picora-<version>-macos-aarch64.dmg` | Drag Picora to Applications. |
+| Linux x64 | `picora-<version>-linux-x86_64.tar.gz` | Extract and run `Picora/picora --library`. |
 
-**macOS:** builds are ad-hoc signed, but not Developer ID signed or Apple-notarized. Gatekeeper may block downloaded copies. Intel Macs are not covered by the current release artifact. Read [macOS installation and signing limitations](docs/MACOS-INSTALL.md) before installing.
+Download these files from [GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest).
 
-**Windows:** the installer is unsigned. Arca sign-in requires the WebView2 runtime. Quit Picora from its tray menu before manual upgrades or uninstalling. Uninstalling preserves downloaded packs, settings, and encrypted sessions.
+- **Windows:** the installer is unsigned. Arca login requires WebView2. Quit Picora before a manual upgrade or uninstall; uninstalling preserves your library and settings.
+- **macOS:** builds are ad-hoc signed, not Apple-notarized. Read the [macOS installation guide](docs/MACOS-INSTALL.md) if Gatekeeper blocks launch. Intel Mac builds are not currently provided.
+- **Linux:** install the system libraries listed under [building from source](#build-from-source). Picker windows require X11 or XWayland.
 
-**Linux:** the picker requires X11 or XWayland. Native Wayland clipboard copying is supported through `wl-clipboard-rs` on compatible compositors and tested with KDE KWin; the windows still use XWayland.
+## Quick start
 
-Looking for an unreleased build? Successful [Rust desktop workflow runs](https://github.com/Party4Bread/Picora/actions/workflows/ci.yml) provide platform artifacts for testing.
+1. Open **Library → Discover** from the tray/menu-bar icon. Search for a pack or paste a URL such as `https://dccon.dcinside.com/#41982` or `https://arca.live/e/54950`, then choose **Add pack to favorites**.
+2. Create collections in **Groups**. Right-click a sticker to favorite it, assign groups, or remove it from your library.
+3. Focus your chat or editor, press **Ctrl+Shift+Space**, and choose a sticker. If automatic paste is unavailable, use **Ctrl+V** or **Cmd+V**.
 
-## Start collecting in three steps
+Closing a window keeps Picora running in the tray. Use **Quit** to exit. The library window copies stickers without automatic paste; launch at login is opt-in.
 
-1. **Add a pack.** Open the library from Picora's tray/menu-bar icon, then **Discover**. Search DCInside or paste a pack URL, such as `https://dccon.dcinside.com/#41982` or `https://arca.live/e/54950`. Select the pack and choose **Add pack to favorites**.
-2. **Organize your reactions.** Create collections in **Groups**. Right-click any sticker to favorite/unfavorite it, add it to a group, or remove it from the library.
-3. **Use a sticker.** Focus your chat or editor, press **Ctrl+Shift+Space**, and click a sticker or select it with arrows and Enter. If automatic paste is unavailable, paste manually with **Ctrl+V** or **Cmd+V**.
+### Arca sign-in
 
-Picora starts in the system tray/menu bar. Closing a window keeps it running; use **Quit** in the tray menu or Settings to exit. On Windows, check the taskbar's hidden-icons arrow. The shortcut is configurable, and launch at login is opt-in. The library window copies stickers without automatic paste.
+Open **Accounts → Sign in / reconnect**, sign in on Arca’s website, complete any browser challenge, and close the login window. **Check connection** verifies catalog access. Saved sessions and connection errors appear in Accounts.
 
-### DCInside and Arca accounts
+Picora stores session cookies using OS-protected storage. If saving fails, the session remains available until Picora quits. DCInside browsing does not require sign-in.
 
-DCInside packs come from [DCInside's sticker repository](https://dccon.dcinside.com/). For [Arca sticker packs](https://arca.live/e/), open **Accounts → Sign in / reconnect**, sign in on the actual website, and close that window to return to Picora. Arca may require a browser challenge or renewed sign-in.
+### Animated stickers
 
-Windows stores Arca cookies encrypted for your Windows account in `arca-session.dpapi`; other platforms use the OS credential store. If saving fails, the session stays in memory and Picora shows an error. See [compatibility notes](docs/COMPATIBILITY.md) for platform limitations.
-
-### Animated stickers and library behavior
-
-Hover to preview animation. Normal selection pastes animated GIF/WebP as files; APNG and supported MP4 stickers can be converted to animated GIF for attachment compatibility. **Paste original file** preserves the original bytes. **Copy still image** copies a PNG frame. GIF conversion can reduce colors and partial transparency; use the original when the receiving app supports it.
-
-Favorites save before downloads finish. If a download is interrupted, the pack remains in your library; uncached stickers download when used, or you can retry the pack download. Removing a sticker also removes its group membership and history; reimport its source pack to restore it. Cached files are retained so existing clipboard file references remain usable.
-
-Reimporting a pack does not make its existing stickers appear newly added. Older libraries without import timestamps initially use their stored insertion order.
+Normal selection pastes animated GIF/WebP as files; supported APNG and MP4 stickers can be converted to GIF. **Paste original file** preserves source bytes; **Copy still image** copies a PNG frame. The receiving app determines whether animations play or appear as attachments.
 
 ## Desktop integration
 
-| Desktop | What to expect |
+| Desktop | Setup |
 | --- | --- |
-| Windows | Global shortcut and automatic paste. Elevated target apps may reject paste injection. |
-| macOS | Grant Accessibility permission to Picora for automatic paste, or to the terminal for an unpackaged source build. Downloaded-app signing limitations still apply. |
-| Linux X11 | Global shortcut, focus restoration, and X11 clipboard ownership. |
-| KDE Plasma / Wayland | Native image/file clipboard access on data-control-capable compositors. Approve the desktop shortcut dialog and enable **Settings → Wayland keyboard access** for automatic paste. XWayland is required for picker windows. |
-| Other Wayland desktops | Clipboard and portal support vary. Picora retains portal/XWayland clipboard fallbacks. If the shortcut portal is unavailable, bind `picora --show` in desktop settings. |
+| Windows | Global shortcut and automatic paste; elevated apps may require manual paste. |
+| macOS | Grant Picora Accessibility permission for automatic paste. |
+| Linux X11 | Keep Picora running to retain clipboard ownership. |
+| KDE Plasma / Wayland | Approve the shortcut dialog; enable **Settings → Wayland keyboard access** for automatic paste. Native clipboard copying does not require keyboard permission. |
+| Other Wayland desktops | Portal and clipboard support vary. If the shortcut portal is unavailable, bind `picora --show` in desktop settings. |
 
-Copying through Wayland data-control does not need Remote Desktop permission. Automatic paste does: the portal requests keyboard access only. Picora tries an already connected clipboard portal first, then native data-control, then the XWayland clipboard bridge. Declined input permission leaves manual paste available where clipboard access works. Picora securely saves the desktop’s permission restore token when available and attempts to reconnect after restart; the desktop may still ask for approval.
-
-No single clipboard format works in every chat app. See [compatibility notes](docs/COMPATIBILITY.md) for known limitations.
+See [compatibility notes](docs/COMPATIBILITY.md) for clipboard formats, input methods, and platform limitations.
 
 ## Build from source
 
@@ -126,28 +116,25 @@ Packaging creates platform archives in `dist/`, plus a macOS DMG on macOS. On Wi
 
 ```powershell
 ./scripts/build-installer.ps1
-# Optional: -Compiler 'C:\path\to\ISCC.exe'
 ```
 
-Platform smoke tests run explicitly:
+Desktop and live-network checks are opt-in:
 
 ```sh
-# KDE clipboard test in a private headless KWin session:
-python scripts/smoke_wayland_clipboard.py
-# Windows interactive picker/library regression:
-cargo test --locked --test windows_viewports -- --ignored --nocapture
-# Live DCInside access:
+cargo test --locked --test arca_live -- --ignored --nocapture
 cargo test --locked --test live live_dcinside_search_pack_and_image -- --ignored
+cargo test --locked --test windows_viewports -- --ignored --nocapture
+python scripts/smoke_wayland_clipboard.py
 ```
 
-CI builds and tests Windows, macOS, and Linux once per pull request or main-branch push. Superseded CI runs are cancelled; successful main builds seed dependency caches for PRs and releases. CI artifacts are retained for seven days. Version tags run the matrix through the release workflow only, which publishes packages and an updater manifest after all platform checks pass. Published release assets are not subject to CI artifact retention. See [release, update, and recovery details](docs/UPDATES.md).
+The Arca check uses your saved session. Windows viewport tests need an interactive desktop; the Wayland script requires headless KWin. For macOS browser clipboard checks, build `cargo build --locked --example clipboard_fixture` and follow the instructions in [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py).
+
+Packaging and installer scripts are used by CI. `test_update_manifest.py` validates release metadata; `tests/update_process.rs` runs updater replacement and recovery scenarios as part of `cargo test`. Platform smoke scripts cover desktop behavior that headless CI cannot exercise. See [release and recovery documentation](docs/UPDATES.md).
 
 On Linux, optional desktop integration files are included in the archive. Put the binary on `PATH`, install the desktop entry to `~/.local/share/applications/`, and the icon to `~/.local/share/icons/hicolor/scalable/apps/`.
 
-## Project notes
+## Project
 
-Picora separates repository adapters, SQLite storage, media caching, background services, native platform integration, and the egui UI. Arca sign-in runs in a separate Wry helper process.
+Picora uses Rust and egui. Repository adapters, SQLite storage, media caching, and native desktop integration are separate modules; Arca login runs in a Wry helper process.
 
-Noto Sans KR is bundled under the [SIL Open Font License](assets/OFL.txt), sourced from [Noto CJK](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/KR). Sticker artwork is downloaded from its original repositories at your request; no sticker artwork is bundled. Picora is an independent project, not an official DCInside or Arca client.
-
-**한국어:** Picora는 Windows·macOS·Linux용 데스크톱 스티커 선택기입니다. 디시콘과 아카콘을 즐겨찾기와 사용자 그룹으로 정리하고, 단축키로 열어 이미지나 파일을 클립보드에 복사할 수 있습니다. Arca 로그인, 운영체제 권한, 대상 앱의 붙여넣기 지원 여부에 따라 일부 기능이 제한될 수 있습니다.
+[Noto Sans KR](https://github.com/notofonts/noto-cjk/tree/main/Sans/SubsetOTF/KR) is bundled under the [SIL Open Font License](assets/OFL.txt). Sticker artwork is downloaded from its source repository at your request. Picora is independent of DCInside and Arca Live.

@@ -1,4 +1,3 @@
-//! Arca HTML adapter. Synthetic fixtures cover parsing; authenticated live verification is required.
 use super::*;
 use crate::model::Sticker;
 use scraper::{Html, Selector};
