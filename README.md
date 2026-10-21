@@ -1,12 +1,12 @@
 # Picora — Desktop Sticker Picker
 
+**English** · [Korean](README-ko.md)
+
 **A desktop sticker picker for Windows, macOS, and Linux, built in Rust.** Search sticker packs, save your favorites, and paste image reactions into apps that accept clipboard images or attachments.
 
 Like the Windows emoji panel, Picora opens with a shortcut: **Ctrl+Shift+Space**. Choose a sticker to copy it and attempt to paste into your previous app. Picora never presses Enter to send a message.
 
 **[Download the latest release](https://github.com/Party4Bread/Picora/releases/latest)** · **[Report a bug](https://github.com/Party4Bread/Picora/issues)** · **[Compatibility](docs/COMPATIBILITY.md)**
-
-이미지 스티커를 데스크톱에서 검색하고, 즐겨찾기와 사용자 그룹으로 정리하세요. 단축키로 스티커를 열어 이미지나 파일로 붙여넣을 수 있습니다. Windows, macOS, Linux를 지원합니다.
 
 ## Features
 
