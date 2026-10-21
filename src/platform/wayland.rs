@@ -34,6 +34,10 @@ impl Wayland {
             .context("Desktop does not offer the Remote Desktop portal")?;
         let session = remote.create_session().await?;
         let setup = async {
+            let closed = session
+                .receive_closed()
+                .await
+                .context("Cannot monitor Wayland session closure")?;
             remote
                 .select_devices(
                     &session,
@@ -59,10 +63,10 @@ impl Wayland {
                 selected.devices().contains(DeviceType::Keyboard),
                 "Keyboard permission was not granted"
             );
-            Ok::<_, anyhow::Error>((clipboard, selected))
+            Ok::<_, anyhow::Error>((clipboard, selected, closed))
         }
         .await;
-        let (clipboard, selected) = match setup {
+        let (clipboard, selected, closed) = match setup {
             Ok(result) => result,
             Err(e) => {
                 let _ = session.close().await;
@@ -82,10 +86,6 @@ impl Wayland {
                     ),
                 },
                 Err(error) => (None, Some(format!("{error:#}"))),
-            };
-            let Ok(closed) = session.receive_closed().await else {
-                let _ = session.close().await;
-                return;
             };
             tokio::pin!(closed);
             loop {
