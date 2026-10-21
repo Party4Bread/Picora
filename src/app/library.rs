@@ -148,7 +148,7 @@ impl App {
                     ui.hyperlink_to("View on source website", &pack.url);
                     if ui
                         .add_enabled(
-                            !self.installing,
+                            !self.downloading_pack,
                             egui::Button::new("Add pack to favorites · download for offline use"),
                         )
                         .clicked()
@@ -158,8 +158,8 @@ impl App {
                         match self.store.save_favorite_pack(&pack) {
                             Ok(()) => {
                                 self.refresh();
-                                self.installing = true;
-                                self.services.install(pack.clone());
+                                self.downloading_pack = true;
+                                self.services.download_pack(pack.clone());
                             }
                             Err(e) => self.message(format!("Cannot save favorite: {e:#}"), true),
                         }
@@ -184,7 +184,9 @@ impl App {
     }
     pub(super) fn library_content(&mut self, ui: &mut egui::Ui) {
         let title = self.collection_title();
-        let items = self.items();
+        let Some(items) = self.load_items(ui) else {
+            return;
+        };
         ui.heading(&title);
         ui.label(
             RichText::new(format!("{} stickers", items.len()))
@@ -209,7 +211,7 @@ impl App {
             ui.menu_button("Pack options", |ui| {
                 let mut favorite = p.favorite;
                 if ui.checkbox(&mut favorite, "Favorite pack").changed() {
-                    let r = self.store.favorite(&key, favorite);
+                    let r = self.store.set_pack_favorite(&key, favorite);
                     self.report(r, "Favorite updated");
                     self.refresh();
                 }
@@ -234,7 +236,9 @@ impl App {
                 .weak(),
         );
         ui.add_space(8.);
-        self.grid(ui, self.items(), false);
+        if let Some(items) = self.load_items(ui) {
+            self.grid(ui, items, false);
+        }
     }
     pub(super) fn discover(&mut self, ui: &mut egui::Ui) {
         ui.heading("Discover stickers");
@@ -376,7 +380,9 @@ impl App {
             }
             self.filter = Filter::Group(id);
             let saved = std::mem::take(&mut self.search);
-            self.grid(ui, self.items(), false);
+            if let Some(items) = self.load_items(ui) {
+                self.grid(ui, items, false);
+            }
             self.search = saved;
         }
     }

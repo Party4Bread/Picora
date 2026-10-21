@@ -98,17 +98,18 @@ impl Store {
         })
         .collect()
     }
-    pub fn favorite(&self, key: &str, value: bool) -> Result<()> {
-        self.conn.execute(
+    pub fn set_pack_favorite(&self, key: &str, value: bool) -> Result<()> {
+        let changed = self.conn.execute(
             "UPDATE packs SET favorite=?2 WHERE key=?1",
             params![key, value],
         )?;
+        ensure!(changed == 1, "Pack is not in your library");
         Ok(())
     }
-    pub fn sticker_favorite(&self, pack: &str, sticker: &str) -> Result<Option<bool>> {
+    pub fn is_sticker_favorite(&self, pack: &str, sticker: &str) -> Result<Option<bool>> {
         Ok(self.conn.query_row("SELECT COALESCE(s.favorite,p.favorite) FROM stickers s JOIN packs p ON p.key=s.pack WHERE s.pack=?1 AND s.id=?2", params![pack,sticker], |r|r.get(0)).optional()?)
     }
-    pub fn favorite_sticker(&self, pack: &str, sticker: &str, favorite: bool) -> Result<()> {
+    pub fn set_sticker_favorite(&self, pack: &str, sticker: &str, favorite: bool) -> Result<()> {
         let changed = self.conn.execute(
             "UPDATE stickers SET favorite=?3 WHERE pack=?1 AND id=?2",
             params![pack, sticker, favorite],
@@ -149,6 +150,7 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+    /// Succeeds if the requested record is already absent.
     pub fn remove_pack(&self, key: &str) -> Result<()> {
         self.conn.execute("DELETE FROM packs WHERE key=?1", [key])?;
         Ok(())
@@ -173,12 +175,14 @@ impl Store {
     }
     pub fn rename_group(&self, id: i64, name: &str) -> Result<()> {
         ensure!(!name.trim().is_empty(), "Name cannot be empty");
-        self.conn.execute(
+        let changed = self.conn.execute(
             "UPDATE groups SET name=?2 WHERE id=?1",
             params![id, name.trim()],
         )?;
+        ensure!(changed == 1, "Group does not exist");
         Ok(())
     }
+    /// Succeeds if the requested record is already absent.
     pub fn delete_group(&self, id: i64) -> Result<()> {
         self.conn.execute("DELETE FROM groups WHERE id=?1", [id])?;
         Ok(())
@@ -187,6 +191,7 @@ impl Store {
         self.conn.execute("INSERT OR IGNORE INTO group_items(group_id,pack,sticker,position) VALUES(?1,?2,?3,COALESCE((SELECT MAX(position)+1 FROM group_items WHERE group_id=?1),0))",params![group,pack,sticker])?;
         Ok(())
     }
+    /// Succeeds if the requested record is already absent.
     pub fn remove_from_group(&self, group: i64, pack: &str, sticker: &str) -> Result<()> {
         self.conn.execute(
             "DELETE FROM group_items WHERE group_id=?1 AND pack=?2 AND sticker=?3",

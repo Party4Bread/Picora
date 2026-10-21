@@ -84,7 +84,7 @@ pub struct App {
     status: String,
     error: bool,
     browsing: bool,
-    installing: bool,
+    downloading_pack: bool,
     login_busy: bool,
     group_name: String,
     rename: String,
@@ -171,7 +171,7 @@ impl App {
             status: "Choose a sticker to copy and paste".into(),
             error: false,
             browsing: false,
-            installing: false,
+            downloading_pack: false,
             login_busy: false,
             group_name: String::new(),
             rename: String::new(),
@@ -343,11 +343,11 @@ impl App {
                 .unwrap_or_else(|| "All stickers".into()),
         }
     }
-    fn items(&self) -> Vec<LibrarySticker> {
+    fn items(&self) -> Result<Vec<LibrarySticker>> {
         let items = match &self.filter {
-            Filter::Group(id) => self.store.group_items(*id).unwrap_or_default(),
-            Filter::Recent => self.store.recents().unwrap_or_default(),
-            Filter::Favorites => self.store.favorite_items().unwrap_or_default(),
+            Filter::Group(id) => self.store.group_items(*id)?,
+            Filter::Recent => self.store.recents()?,
+            Filter::Favorites => self.store.favorite_items()?,
             filter => self
                 .packs
                 .iter()
@@ -366,14 +366,25 @@ impl App {
                 .collect(),
         };
         let query = self.search.trim().to_lowercase();
-        items
+        Ok(items
             .into_iter()
             .filter(|s| {
                 query.is_empty()
                     || s.sticker.label.to_lowercase().contains(&query)
                     || s.pack_title.to_lowercase().contains(&query)
             })
-            .collect()
+            .collect())
+    }
+    fn load_items(&mut self, ui: &mut egui::Ui) -> Option<Vec<LibrarySticker>> {
+        match self.items() {
+            Ok(items) => Some(items),
+            Err(error) => {
+                let message = format!("Could not load stickers: {error:#}");
+                ui.colored_label(ui.visuals().error_fg_color, &message);
+                self.message(message, true);
+                None
+            }
+        }
     }
     fn choose(&mut self, item: LibrarySticker, mode: CopyMode, from_picker: bool) {
         if matches!(
@@ -403,7 +414,7 @@ impl App {
     }
     fn footer(&self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            if self.pending.is_some() || self.installing || self.browsing || self.login_busy {
+            if self.pending.is_some() || self.downloading_pack || self.browsing || self.login_busy {
                 ui.spinner();
             }
             ui.label(RichText::new(&self.status).size(12.).color(if self.error {
@@ -564,7 +575,7 @@ impl App {
                         });
                 }
                 ui.add_space(4.);
-                let items = self.items();
+                let Some(items) = self.load_items(ui) else { return; };
                 if ctx.content_rect().height() >= 400. {
                     ui.horizontal(|ui| {
                         ui.add(

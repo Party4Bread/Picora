@@ -54,8 +54,8 @@ impl App {
                         Err(e) => self.message(format!("{e:#}"), true),
                     }
                 }
-                Event::Installed(result) => {
-                    self.installing = false;
+                Event::PackDownloaded(result) => {
+                    self.downloading_pack = false;
                     match result {
                         // The favorite was committed before downloading. Do not
                         // overwrite an unfavorite/removal made during the download.
@@ -118,8 +118,7 @@ impl App {
                 }
                 #[cfg(target_os = "linux")]
                 Event::Wayland(result) => match result {
-                    Ok((w, warning)) => {
-                        *self.services.wayland.lock().unwrap() = Some(w);
+                    Ok(warning) => {
                         self.message(warning.unwrap_or_else(|| "Wayland keyboard access enabled".into()), false);
                     }
                     Err(e) => self.message(format!("Wayland input unavailable: {e:#}. Stickers can still be copied when a clipboard backend is available."), true),

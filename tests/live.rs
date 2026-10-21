@@ -1,7 +1,7 @@
 use picora::{
     media::decode,
     model::{PackRef, Provider},
-    providers::{Repository, StickerProvider},
+    providers::Repository,
 };
 #[tokio::test]
 #[ignore = "contacts DCInside; run explicitly"]

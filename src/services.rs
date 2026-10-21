@@ -1,3 +1,22 @@
+//! Commands submit background work and report completion through `Bus`; callers
+//! must keep draining events even after hiding the picker. Errors are carried in
+//! each completion's `Result`, not returned by the submission method.
+//!
+//! | Command | Completion | Correlation |
+//! | --- | --- | --- |
+//! | `browse`, `preview` | `Catalog`, `Preview` | caller-supplied request ID |
+//! | `media` | `Media` | asset URL and animation request |
+//! | `download_pack` | `PackDownloaded` | returned pack; `Progress` is informational |
+//! | `copy`, `paste` | `Copied`, `Pasted` | one in-flight UI copy/paste operation |
+//! | `login`, `check_arca` | `Login` | shared account status updated before completion |
+//! | `enable_wayland` | `Wayland` | session installed before notification; no event if no saved grant |
+//!
+//! `asset` is awaited work: its caller receives the asset or error directly.
+//! Construction and `logout` perform synchronous credential-store I/O; `logout`
+//! resets local account state even if deleting the persisted credentials fails.
+//! On macOS, `NativePaste` transfers keyboard execution to the UI thread before
+//! the final `Pasted` event. `cancel_paste` invalidates tickets without an event.
+
 pub mod account;
 use crate::{
     media::{Asset, Decoded, MediaCache},
@@ -6,7 +25,7 @@ use crate::{
         clipboard::ClipboardService,
         focus::{self, Target},
     },
-    providers::{Repository, StickerProvider},
+    providers::Repository,
 };
 #[cfg(target_os = "linux")]
 use anyhow::Context;
@@ -19,7 +38,7 @@ pub enum Event {
     UpdateHealthFailed(String),
     Catalog(u64, Result<Vec<Pack>>),
     Preview(u64, Result<Pack>),
-    Installed(Result<Pack>),
+    PackDownloaded(Result<Pack>),
     Media(
         String,
         Result<(Asset, Decoded)>,
@@ -34,7 +53,7 @@ pub enum Event {
     Login(Result<String>),
     Show,
     #[cfg(target_os = "linux")]
-    Wayland(Result<(crate::platform::wayland::Wayland, Option<String>)>),
+    Wayland(Result<Option<String>>),
 }
 #[derive(Clone)]
 pub struct Bus {
@@ -59,7 +78,7 @@ pub struct Services {
     pub account_status: Arc<Mutex<account::AccountStatus>>,
     cancellation: crate::platform::paste::Cancellation,
     #[cfg(target_os = "linux")]
-    pub wayland: Arc<Mutex<Option<crate::platform::wayland::Wayland>>>,
+    wayland: Arc<Mutex<Option<crate::platform::wayland::Wayland>>>,
     #[cfg(target_os = "linux")]
     wayland_connecting: Arc<tokio::sync::Mutex<()>>,
 }
@@ -146,7 +165,7 @@ impl Services {
             s.bus.send(Event::Media(url, result, animate, permit));
         });
     }
-    pub fn install(&self, pack: Pack) {
+    pub fn download_pack(&self, pack: Pack) {
         let s = self.clone();
         self.runtime.spawn(async move {
             let result = async {
@@ -162,7 +181,7 @@ impl Services {
                 Ok(pack)
             }
             .await;
-            s.bus.send(Event::Installed(result));
+            s.bus.send(Event::PackDownloaded(result));
         });
     }
     pub fn copy(&self, item: LibrarySticker, mode: crate::media::CopyMode) {
@@ -322,7 +341,10 @@ impl Services {
                 return;
             };
             match crate::platform::wayland::permission::connect(automatic).await {
-                Ok(Some(session)) => s.bus.send(Event::Wayland(Ok(session))),
+                Ok(Some((session, warning))) => {
+                    *s.wayland.lock().unwrap() = Some(session);
+                    s.bus.send(Event::Wayland(Ok(warning)));
+                }
                 Ok(None) => (),
                 Err(e) => s.bus.send(Event::Wayland(Err(e))),
             }

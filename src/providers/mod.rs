@@ -2,7 +2,6 @@ pub mod arca;
 pub mod dcinside;
 use crate::model::{Pack, PackRef, Provider};
 use anyhow::{Context, Result, bail, ensure};
-use async_trait::async_trait;
 use reqwest::{
     Client, StatusCode,
     cookie::{CookieStore, Jar},
@@ -11,11 +10,6 @@ use std::{sync::Arc, time::Duration};
 use url::Url;
 
 pub const MAX_DOWNLOAD: usize = 25 * 1024 * 1024;
-#[async_trait]
-pub trait StickerProvider {
-    async fn browse(&self, query: &str, page: u32) -> Result<Vec<Pack>>;
-    async fn pack(&self, reference: &PackRef) -> Result<Pack>;
-}
 #[derive(Clone)]
 pub struct Repository {
     pub(crate) client: Client,
@@ -112,15 +106,14 @@ pub(crate) async fn read_response(mut response: reqwest::Response) -> Result<Vec
     }
     Ok(bytes)
 }
-#[async_trait]
-impl StickerProvider for Repository {
-    async fn browse(&self, query: &str, page: u32) -> Result<Vec<Pack>> {
+impl Repository {
+    pub async fn browse(&self, query: &str, page: u32) -> Result<Vec<Pack>> {
         match self.provider {
             Provider::Dcinside => dcinside::browse(self, query, page).await,
             Provider::Arca => arca::browse(self, query, page).await,
         }
     }
-    async fn pack(&self, r: &PackRef) -> Result<Pack> {
+    pub async fn pack(&self, r: &PackRef) -> Result<Pack> {
         ensure!(r.provider == self.provider, "Wrong repository");
         match self.provider {
             Provider::Dcinside => dcinside::detail(self, r).await,

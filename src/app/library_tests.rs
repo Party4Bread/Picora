@@ -85,7 +85,7 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         status: "Choose a sticker to copy and paste".into(),
         error: false,
         browsing: false,
-        installing: false,
+        downloading_pack: false,
         login_busy: false,
         group_name: String::new(),
         rename: String::new(),
@@ -201,7 +201,7 @@ fn favorite_button_populates_library_sidebar_before_download_finishes() {
     let output = frame(&mut app, &ctx, vec![]);
     let button = label(&output, "Add pack to favorites").expect("favorite button visible");
     click(&mut app, &ctx, button);
-    assert!(app.installing, "favorite click should start install");
+    assert!(app.downloading_pack, "favorite click should start install");
     assert_eq!(app.store.packs().unwrap().len(), 2, "both packs persisted");
     app.preview = None;
     app.tab = Tab::Library;
@@ -375,7 +375,7 @@ fn picker_enter_does_not_copy_a_sticker_while_a_popup_is_open() {
         },
         |ctx| {
             egui::Popup::open_id(ctx, egui::Id::new("collection-menu"));
-            egui::CentralPanel::default().show(ctx, |ui| app.grid(ui, app.items(), true));
+            egui::CentralPanel::default().show(ctx, |ui| app.grid(ui, app.items().unwrap(), true));
         },
     );
     assert!(
@@ -833,4 +833,27 @@ fn retry_thumbnail_click_does_not_activate_sticker() {
     assert!(!response.activated);
     assert!(!app.failed.contains_key("broken"));
     assert!(app.pending.is_none());
+}
+
+#[test]
+fn failed_library_query_is_not_an_empty_collection() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    rusqlite::Connection::open(root.path().join("library.sqlite3"))
+        .unwrap()
+        .execute_batch("DROP TABLE recents")
+        .unwrap();
+    app.filter = Filter::Recent;
+    assert!(app.items().is_err());
+    let output = ctx.run(egui::RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| app.library_content(ui));
+    });
+    assert!(app.error);
+    assert!(app.status.contains("Could not load stickers"));
+    assert!(label(&output, "No stickers in this collection").is_none());
 }

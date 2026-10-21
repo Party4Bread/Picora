@@ -4,6 +4,6 @@ pub mod media;
 pub mod model;
 pub mod platform;
 pub mod providers;
-pub mod services;
+mod services;
 pub mod store;
 pub mod update;

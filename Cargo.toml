@@ -16,10 +16,8 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"
 tar = "0.4"
 anyhow = "1"
-async-trait = "0.1"
 futures-util = "0.3"
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "x11", "wayland", "accesskit"] }
-egui_extras = { version = "0.33", features = ["image"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "fs", "process", "io-util"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies", "stream"] }
 serde = { version = "1", features = ["derive"] }

@@ -207,7 +207,7 @@ impl App {
         ui.separator();
         let favorite = match self
             .store
-            .sticker_favorite(&item.pack_key, &item.sticker.id)
+            .is_sticker_favorite(&item.pack_key, &item.sticker.id)
         {
             Ok(Some(value)) => value,
             Ok(None) => {
@@ -227,9 +227,9 @@ impl App {
             })
             .clicked()
         {
-            let result = self
-                .store
-                .favorite_sticker(&item.pack_key, &item.sticker.id, !favorite);
+            let result =
+                self.store
+                    .set_sticker_favorite(&item.pack_key, &item.sticker.id, !favorite);
             self.report(result, "Sticker favorite updated");
             ui.close();
         }
