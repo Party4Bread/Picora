@@ -1079,3 +1079,20 @@ fn update_panel_cancels_downloads_but_not_handoff_and_shows_failure() {
     let output = render(&mut app, &ctx, vec![]);
     assert!(label(&output, "Update checksum or size mismatch").is_some());
 }
+
+#[test]
+fn synchronous_reports_preserve_causes_and_clear_errors_after_success() {
+    let temp = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(temp.path().to_owned(), runtime.handle().clone(), &ctx);
+    app.report(
+        Err(anyhow::anyhow!("Permission denied").context("Cannot delete saved session")),
+        "Signed out",
+    );
+    assert!(app.error);
+    assert_eq!(app.status, "Cannot delete saved session: Permission denied");
+    app.report(Ok(()), "Signed out");
+    assert!(!app.error);
+    assert_eq!(app.status, "Signed out");
+}

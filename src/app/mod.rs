@@ -242,7 +242,7 @@ impl App {
                 self.packs = p;
                 self.groups = g;
             }
-            (Err(e), _) | (_, Err(e)) => self.message(e.to_string(), true),
+            (Err(e), _) | (_, Err(e)) => self.message(format!("{e:#}"), true),
         }
     }
     fn register_native_shortcut(&mut self) -> Result<()> {
@@ -469,7 +469,7 @@ impl App {
     fn report(&mut self, result: Result<()>, success: &str) {
         match result {
             Ok(()) => self.message(success, false),
-            Err(e) => self.message(e.to_string(), true),
+            Err(e) => self.message(format!("{e:#}"), true),
         }
     }
     fn footer(&self, ui: &mut egui::Ui) {

@@ -276,7 +276,7 @@ impl App {
                     Ok(r) => {
                         self.preview_pack(r);
                     }
-                    Err(e) => self.message(e.to_string(), true),
+                    Err(e) => self.message(format!("{e:#}"), true),
                 }
             } else {
                 self.page = 1;
@@ -347,7 +347,7 @@ impl App {
                         self.group_name.clear();
                         self.refresh();
                     }
-                    Err(e) => self.message(e.to_string(), true),
+                    Err(e) => self.message(format!("{e:#}"), true),
                 }
             }
         });
@@ -394,7 +394,7 @@ impl App {
         let account = match self.services.account_status() {
             Ok(account) => account.clone(),
             Err(error) => {
-                ui.colored_label(ui.visuals().error_fg_color, error.to_string());
+                ui.colored_label(ui.visuals().error_fg_color, format!("{error:#}"));
                 return;
             }
         };
@@ -516,7 +516,7 @@ impl App {
                 Ok(()) => changed = true,
                 Err(e) => {
                     self.settings.launch_at_login = old;
-                    self.message(e.to_string(), true);
+                    self.message(format!("{e:#}"), true);
                 }
             }
         }
