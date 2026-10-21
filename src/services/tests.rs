@@ -19,7 +19,7 @@ impl Fixture {
             MediaCache::new(dir.path().into()).unwrap(),
             Bus {
                 tx,
-                ctx: Default::default(),
+                ctx: egui::Context::default(),
             },
             Ok(vec![]),
         )

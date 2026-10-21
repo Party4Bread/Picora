@@ -1030,3 +1030,52 @@ fn media_failure_preserves_the_diagnostic_chain() {
         "Invalid MP4 sticker: missing video track"
     );
 }
+
+#[test]
+fn update_panel_cancels_downloads_but_not_handoff_and_shows_failure() {
+    use crate::update::controller::State;
+    fn render(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| app.updates_ui(ui));
+            },
+        )
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(dir.path().to_owned(), rt.handle().clone(), &ctx);
+    app.updates.state = State::Downloading(5, 10);
+    render(&mut app, &ctx, vec![]);
+    let output = render(&mut app, &ctx, vec![]);
+    let position = label(&output, "Cancel update").expect("download offers cancellation");
+    for pressed in [true, false] {
+        render(
+            &mut app,
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+    }
+    assert!(matches!(app.updates.state, State::Idle));
+    app.updates.state = State::HandingOff;
+    let output = render(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Cancel update").is_none());
+    assert!(label(&output, "Preparing restart…").is_some());
+    app.updates.state = State::Error("Update checksum or size mismatch".into());
+    let output = render(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Update checksum or size mismatch").is_some());
+}
