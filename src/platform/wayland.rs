@@ -116,7 +116,13 @@ impl Wayland {
                             let response=async {let (_,data)=contents.as_ref().filter(|(m,_)|*m==mime).context("Clipboard format not offered")?;
                                 let fd=c.selection_write(&session,serial).await?;
                                 let fd:std::os::fd::OwnedFd=fd.into();let file:std::fs::File=fd.into();let mut file=tokio::fs::File::from_std(file);file.write_all(data).await?;file.flush().await?;Ok::<_,anyhow::Error>(())}.await;
-                            let _=c.selection_write_done(&session,serial,response.is_ok()).await;
+                            let delivered = response.is_ok();
+                            if let Err(error) = response {
+                                eprintln!("Picora: Wayland clipboard transfer {serial} ({mime}) failed: {error:#}");
+                            }
+                            if let Err(error) = c.selection_write_done(&session, serial, delivered).await {
+                                eprintln!("Picora: Cannot acknowledge Wayland clipboard transfer {serial} ({mime}): {error:#}");
+                            }
                         }else{break;}
                     }
                 }
