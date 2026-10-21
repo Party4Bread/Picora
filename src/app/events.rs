@@ -95,9 +95,22 @@ impl App {
                     }
                     Err(e) => { self.pending = None; self.message(format!("Could not copy: {e:#}"), true); }
                 },
+                #[cfg(target_os = "macos")]
+                Event::NativePaste(target, ticket) => {
+                    self.services.bus.send(Event::Pasted(focus::send_paste(target, ticket)));
+                },
                 Event::Pasted(result) => match result {
                     Ok(()) => self.message("Copied and paste shortcut sent", false),
-                    Err(e) => self.message(format!("Copied — paste manually. {e:#}"), true),
+                    Err(e) => {
+                        #[cfg(target_os = "macos")]
+                        if e.downcast_ref::<platform::macos_permissions::AccessibilityRequired>().is_some() {
+                            // The picker is already hidden. Make setup visible,
+                            // preserving the clipboard and cancelling stale work.
+                            self.open_library();
+                            self.tab = Tab::Settings;
+                        }
+                        self.message(format!("Copied — paste manually. {e:#}"), true);
+                    },
                 },
                 Event::Login(result) => {
                     self.login_busy = false;

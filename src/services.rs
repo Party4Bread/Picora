@@ -29,6 +29,8 @@ pub enum Event {
     Progress(String),
     Copied(Result<LibrarySticker>),
     Pasted(Result<()>),
+    #[cfg(target_os = "macos")]
+    NativePaste(Target, crate::platform::paste::Ticket),
     Login(Result<String>),
     Show,
     #[cfg(target_os = "linux")]
@@ -196,27 +198,49 @@ impl Services {
     }
     pub fn paste(&self, target: Target, picker: Option<Target>) {
         let ticket = self.cancellation.ticket();
-        let s = self.clone();
-        self.runtime.spawn(async move {
-            let result = async {
-                if crate::platform::is_wayland() {
-                    #[cfg(target_os = "linux")]
-                    {
-                        let w = s
-                            .wayland
-                            .lock()
-                            .unwrap()
-                            .clone()
-                            .context("Enable Wayland keyboard access in Settings")?;
-                        anyhow::ensure!(ticket.valid(), "Paste cancelled");
-                        return w.paste(ticket).await;
-                    }
-                }
-                tokio::task::spawn_blocking(move || focus::paste(target, picker, ticket)).await?
+        #[cfg(target_os = "macos")]
+        {
+            let bus = self.bus.clone();
+            if !crate::platform::macos_permissions::accessibility_allowed() {
+                bus.send(Event::Pasted(Err(
+                    crate::platform::macos_permissions::AccessibilityRequired.into(),
+                )));
+                return;
             }
-            .await;
-            s.bus.send(Event::Pasted(result));
-        });
+            // Keep the UI runloop free to process the focus change. Carbon's
+            // keyboard-layout APIs used by Enigo must then run on the UI thread.
+            self.runtime.spawn_blocking(move || {
+                match focus::prepare_paste(target, picker, &ticket) {
+                    Ok(()) => bus.send(Event::NativePaste(target, ticket)),
+                    Err(error) => bus.send(Event::Pasted(Err(error))),
+                }
+            });
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let s = self.clone();
+            self.runtime.spawn(async move {
+                let result = async {
+                    if crate::platform::is_wayland() {
+                        #[cfg(target_os = "linux")]
+                        {
+                            let w = s
+                                .wayland
+                                .lock()
+                                .unwrap()
+                                .clone()
+                                .context("Enable Wayland keyboard access in Settings")?;
+                            anyhow::ensure!(ticket.valid(), "Paste cancelled");
+                            return w.paste(ticket).await;
+                        }
+                    }
+                    tokio::task::spawn_blocking(move || focus::paste(target, picker, ticket))
+                        .await?
+                }
+                .await;
+                s.bus.send(Event::Pasted(result));
+            });
+        }
     }
     pub fn login(&self) {
         let s = self.clone();

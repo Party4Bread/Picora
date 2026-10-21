@@ -445,6 +445,18 @@ impl App {
                         }
                     });
                 });
+                #[cfg(target_os = "macos")]
+                if self.settings.auto_paste
+                    && !platform::macos_permissions::accessibility_allowed()
+                {
+                    ui.label("Automatic paste needs macOS Accessibility permission. Copying still works.");
+                    if ui.button("Set up automatic paste").clicked() {
+                        self.hide_picker(ctx);
+                        self.open_library();
+                        self.tab = Tab::Settings;
+                    }
+                    ui.add_space(8.);
+                }
                 let search = ui.add_sized(
                     [ui.available_width(), 36.],
                     egui::TextEdit::singleline(&mut self.search)
