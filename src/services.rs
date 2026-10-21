@@ -130,20 +130,29 @@ impl Services {
             wayland_connecting: Arc::default(),
         })
     }
-    pub fn repo(&self, p: Provider) -> Repository {
-        self.repos.lock().unwrap()[usize::from(p != Provider::Dcinside)].clone()
+    pub fn repo(&self, p: Provider) -> Result<Repository> {
+        let repos = self
+            .repos
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Repository state unavailable; restart Picora"))?;
+        Ok(repos[usize::from(p != Provider::Dcinside)].clone())
+    }
+    pub fn account_status(&self) -> Result<std::sync::MutexGuard<'_, account::AccountStatus>> {
+        self.account_status
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Account state unavailable; restart Picora"))
     }
     pub fn browse(&self, p: Provider, query: String, page: u32, id: u64) {
         let s = self.clone();
         self.runtime.spawn(async move {
-            let result = s.repo(p).browse(&query, page).await;
+            let result = async { s.repo(p)?.browse(&query, page).await }.await;
             s.bus.send(Event::Catalog(id, result));
         });
     }
     pub fn preview(&self, r: PackRef, id: u64) {
         let s = self.clone();
         self.runtime.spawn(async move {
-            let result = s.repo(r.provider).pack(&r).await;
+            let result = async { s.repo(r.provider)?.pack(&r).await }.await;
             s.bus.send(Event::Preview(id, result));
         });
     }
@@ -154,7 +163,7 @@ impl Services {
         if let Some(asset) = tokio::task::spawn_blocking(move || cache.cached(&key)).await?? {
             return Ok(asset);
         }
-        let bytes = self.repo(p).bytes(url).await?;
+        let bytes = self.repo(p)?.bytes(url).await?;
         let cache = self.cache.clone();
         let url = url.to_owned();
         tokio::task::spawn_blocking(move || cache.save(&url, &bytes)).await?
@@ -206,7 +215,13 @@ impl Services {
                     tokio::task::spawn_blocking(move || cache.prepare_copy(asset, mode)).await??;
                 #[cfg(target_os = "linux")]
                 let portal_error = {
-                    let wayland = s.wayland.lock().unwrap().clone();
+                    let wayland = s
+                        .wayland
+                        .lock()
+                        .map_err(|_| {
+                            anyhow::anyhow!("Wayland session unavailable; restart Picora")
+                        })?
+                        .clone();
                     if let Some(w) = wayland {
                         match w.copy(asset.clone(), original).await {
                             Ok(()) => return Ok(item),
@@ -218,7 +233,9 @@ impl Services {
                 };
                 let clipboard = s.clipboard.clone();
                 let fallback =
-                    tokio::task::spawn_blocking(move || clipboard.copy(&asset, original)).await?;
+                    tokio::task::spawn_blocking(move || clipboard.copy(&asset, original))
+                        .await
+                        .unwrap_or_else(|error| Err(error.into()));
                 #[cfg(target_os = "linux")]
                 let fallback = match portal_error {
                     Some(error) => {
@@ -270,7 +287,9 @@ impl Services {
                             let w = s
                                 .wayland
                                 .lock()
-                                .unwrap()
+                                .map_err(|_| {
+                                    anyhow::anyhow!("Wayland session unavailable; restart Picora")
+                                })?
                                 .clone()
                                 .context("Enable Wayland keyboard access in Settings")?;
                             anyhow::ensure!(ticket.valid(), "Paste cancelled");
@@ -312,13 +331,16 @@ impl Services {
             let repo = Repository::new(Provider::Arca)?;
             repo.set_cookies(&cookies);
             // Keep the usable session even if persistence or verification fails.
-            self.repos.lock().unwrap()[1] = repo.clone();
+            self.repos
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Repository state unavailable; restart Picora"))?[1] =
+                repo.clone();
             let persisted = persist(cookies).await;
             let saved = persisted.is_ok();
             let storage_error = persisted
                 .err()
                 .map(|e| format!("Could not save the session: {e:#}"));
-            *self.account_status.lock().unwrap() = account::AccountStatus {
+            *self.account_status()? = account::AccountStatus {
                 has_session: true,
                 saved,
                 check: account::CheckState::Checking,
@@ -326,43 +348,44 @@ impl Services {
             };
             self.bus.ctx.request_repaint();
             let check = verify(repo).await.map_err(|e| format!("{e:#}"));
-            self.account_status.lock().unwrap().finish_check(check);
-            Ok(self.account_status.lock().unwrap().label().to_owned())
+            self.account_status()?.finish_check(check);
+            Ok(self.account_status()?.label().to_owned())
         }
         .await;
-        if let Err(e) = &result {
-            self.account_status
-                .lock()
-                .unwrap()
-                .finish_check(Err(format!("{e:#}")));
+        if let Err(e) = &result
+            && let Ok(mut status) = self.account_status()
+        {
+            status.finish_check(Err(format!("{e:#}")));
         }
         self.bus.send(Event::Login(result));
     }
     pub fn check_arca(&self) {
-        self.account_status.lock().unwrap().check = account::CheckState::Checking;
         let s = self.clone();
         self.runtime.spawn(async move {
-            let result = s
-                .repo(Provider::Arca)
-                .browse("", 1)
-                .await
-                .map(|_| ())
-                .map_err(|e| format!("{e:#}"));
-            let message = {
-                let mut status = s.account_status.lock().unwrap();
-                status.finish_check(result);
-                status.label().to_owned()
-            };
-            s.bus.send(Event::Login(Ok(message)));
+            let result = async {
+                s.account_status()?.check = account::CheckState::Checking;
+                let check = async { s.repo(Provider::Arca)?.browse("", 1).await }
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| format!("{e:#}"));
+                let mut status = s.account_status()?;
+                status.finish_check(check);
+                Ok(status.label().to_owned())
+            }
+            .await;
+            s.bus.send(Event::Login(result));
         });
     }
     pub fn logout(&self) -> Result<()> {
         self.logout_with(crate::auth::forget)
     }
     fn logout_with(&self, forget: impl FnOnce() -> Result<()>) -> Result<()> {
-        self.repos.lock().unwrap()[1] = Repository::new(Provider::Arca)?;
+        self.repos
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Repository state unavailable; restart Picora"))?[1] =
+            Repository::new(Provider::Arca)?;
         let result = forget();
-        let mut status = self.account_status.lock().unwrap();
+        let mut status = self.account_status()?;
         *status = account::AccountStatus::default();
         if let Err(e) = &result {
             status.saved = true;
@@ -381,12 +404,83 @@ impl Services {
             };
             match crate::platform::wayland::permission::connect(automatic).await {
                 Ok(Some((session, warning))) => {
-                    *s.wayland.lock().unwrap() = Some(session);
-                    s.bus.send(Event::Wayland(Ok(warning)));
+                    let result = s
+                        .wayland
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("Wayland session unavailable; restart Picora"))
+                        .map(|mut slot| {
+                            *slot = Some(session);
+                            warning
+                        });
+                    s.bus.send(Event::Wayland(result));
                 }
                 Ok(None) => (),
                 Err(e) => s.bus.send(Event::Wayland(Err(e))),
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use super::*;
+
+    #[test]
+    fn damaged_shared_state_still_completes_requests() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let s = Services::with_session(
+            rt.handle().clone(),
+            MediaCache::new(dir.path().into()).unwrap(),
+            Bus {
+                tx,
+                ctx: Default::default(),
+            },
+            Ok(vec![]),
+        )
+        .unwrap();
+        let repos = s.repos.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = repos.lock().unwrap();
+            panic!("simulate interrupted repository mutation");
+        })
+        .join();
+        rt.block_on(async {
+            s.browse(Provider::Arca, String::new(), 1, 42);
+            tokio::task::yield_now().await;
+        });
+        let Event::Catalog(42, result) = rx.try_recv().unwrap() else {
+            panic!("missing catalog completion")
+        };
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Repository state unavailable")
+        );
+
+        let status = s.account_status.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = status.lock().unwrap();
+            panic!("simulate interrupted account mutation");
+        })
+        .join();
+        rt.block_on(async {
+            s.check_arca();
+            tokio::task::yield_now().await;
+        });
+        let Event::Login(result) = rx.try_recv().unwrap() else {
+            panic!("missing account completion")
+        };
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Account state unavailable")
+        );
     }
 }

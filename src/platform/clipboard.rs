@@ -39,7 +39,9 @@ impl ClipboardService {
             *guard =
                 Some(ClipboardContext::new().map_err(|e| anyhow!("Clipboard unavailable: {e}"))?);
         }
-        let clipboard = guard.as_ref().unwrap();
+        let clipboard = guard
+            .as_ref()
+            .ok_or_else(|| anyhow!("Clipboard initialization failed"))?;
         if original {
             clipboard
                 .set_files(vec![asset.original.to_string_lossy().into_owned()])

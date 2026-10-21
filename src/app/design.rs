@@ -80,7 +80,7 @@ pub(super) fn configure(ctx: &egui::Context) {
         } else {
             Color32::from_rgb(228, 234, 239)
         };
-        v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, v.weak_text_color.unwrap());
+        v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, v.weak_text_color());
         v.widgets.active.weak_bg_fill = v.selection.bg_fill;
         for widget in [
             &mut v.widgets.inactive,

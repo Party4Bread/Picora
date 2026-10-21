@@ -391,7 +391,13 @@ impl App {
         ui.strong("DCInside");
         ui.label("Public packs can be browsed without signing in.");
         ui.add_space(24.);
-        let account = self.services.account_status.lock().unwrap().clone();
+        let account = match self.services.account_status() {
+            Ok(account) => account.clone(),
+            Err(error) => {
+                ui.colored_label(ui.visuals().error_fg_color, error.to_string());
+                return;
+            }
+        };
         ui.horizontal_wrapped(|ui| {
             ui.strong("arca.live");
             let label = if self.login_busy && !account.checking() {

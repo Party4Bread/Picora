@@ -130,7 +130,11 @@ mod lifecycle_tests {
                 },
             ));
             assert_eq!(
-                services.repo(Provider::Arca).cookie("session").as_deref(),
+                services
+                    .repo(Provider::Arca)
+                    .unwrap()
+                    .cookie("session")
+                    .as_deref(),
                 Some("test-session")
             );
             let status = services.account_status.lock().unwrap().clone();
@@ -149,7 +153,13 @@ mod lifecycle_tests {
                 .logout_with(|| anyhow::bail!("deletion denied"))
                 .unwrap_err();
             assert!(error.to_string().contains("deletion denied"));
-            assert!(services.repo(Provider::Arca).cookie("session").is_none());
+            assert!(
+                services
+                    .repo(Provider::Arca)
+                    .unwrap()
+                    .cookie("session")
+                    .is_none()
+            );
             let status = services.account_status.lock().unwrap().clone();
             assert!(!status.has_session);
             assert!(status.saved);

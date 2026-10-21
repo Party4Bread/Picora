@@ -166,12 +166,8 @@ impl App {
                 },
             }
         }
-        if self
-            .paste_at
-            .as_ref()
-            .is_some_and(|(at, _, _)| Instant::now() >= *at)
+        if let Some((_, target, picker)) = self.paste_at.take_if(|(at, _, _)| Instant::now() >= *at)
         {
-            let (_, target, picker) = self.paste_at.take().unwrap();
             self.services.paste(target, picker);
         }
     }
@@ -185,12 +181,10 @@ impl App {
             // ordinary redraws never turn an animated thumbnail into a loader.
             let animation = self
                 .visuals
-                .iter()
+                .iter_mut()
                 .filter(|(_, v)| v.frames.len() > 1)
-                .min_by_key(|(key, v)| (key.as_str() == url, v.last_used))
-                .map(|(key, _)| key.clone());
-            if let Some(key) = animation {
-                let v = self.visuals.get_mut(&key).unwrap();
+                .min_by_key(|(key, v)| (key.as_str() == url, v.last_used));
+            if let Some((_, v)) = animation {
                 v.frames.truncate(1);
                 v.delays.truncate(1);
                 let [width, height] = v.frames[0].size();
