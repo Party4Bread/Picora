@@ -543,16 +543,16 @@ impl App {
                                         for p in self.packs.clone() {
                                             ui.push_id(p.pack.reference.key(), |ui| {
                                                 let filter = Filter::Pack(p.pack.reference.key());
-                                                if self
+                                                let thumbnail = self
                                                     .thumb(
                                                         ui,
                                                         p.pack.reference.provider,
                                                         &p.pack.thumbnail,
                                                         38.,
                                                         self.filter == filter,
-                                                    )
-                                                    .on_hover_text(&p.pack.title)
-                                                    .clicked()
+                                                    );
+                                                thumbnail.response.on_hover_text(&p.pack.title);
+                                                if thumbnail.activated
                                                 {
                                                     self.filter = filter;
                                                     self.selected = 0;

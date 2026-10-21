@@ -283,12 +283,18 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
     let _ = fs::remove_dir_all(&directory);
     outcome
 }
+fn rollback_error(cause: anyhow::Error, rollback: Result<()>) -> anyhow::Error {
+    match rollback {
+        Ok(()) => cause,
+        Err(error) => cause.context(format!("Rollback also failed: {error:#}")),
+    }
+}
+
 fn apply_and_restart(layout: &InstallLayout, staged: &StagedUpdate) -> Result<()> {
     recover(layout)?;
     let mut transaction = Transaction::prepare(layout, staged)?;
     if let Err(e) = transaction.apply() {
-        transaction.rollback()?;
-        return Err(e);
+        return Err(rollback_error(e, transaction.rollback()));
     }
     let listener = listener()?;
     let token = nonce();
@@ -303,8 +309,7 @@ fn apply_and_restart(layout: &InstallLayout, staged: &StagedUpdate) -> Result<()
     let mut child = match child {
         Ok(c) => c,
         Err(e) => {
-            transaction.rollback()?;
-            return Err(e.into());
+            return Err(rollback_error(e.into(), transaction.rollback()));
         }
     };
     let result = receive_with(
@@ -331,8 +336,7 @@ fn apply_and_restart(layout: &InstallLayout, staged: &StagedUpdate) -> Result<()
     if let Err(e) = result {
         let _ = child.kill();
         let _ = child.wait();
-        transaction.rollback()?;
-        return Err(e);
+        return Err(rollback_error(e, transaction.rollback()));
     }
     Ok(())
 }
@@ -428,6 +432,20 @@ pub fn last_failure() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rollback_failure_preserves_initial_failure() {
+        let error = super::rollback_error(
+            anyhow::anyhow!("replacement failed"),
+            Err(anyhow::anyhow!("backup unavailable")),
+        );
+        let message = format!("{error:#}");
+        assert!(message.contains("replacement failed"));
+        assert!(message.contains("backup unavailable"));
+        assert_eq!(
+            super::rollback_error(anyhow::anyhow!("original"), Ok(())).to_string(),
+            "original"
+        );
+    }
     use super::*;
     #[test]
     fn authenticated_handshake_and_timeout() {

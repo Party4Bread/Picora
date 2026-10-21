@@ -1,4 +1,9 @@
 use super::*;
+
+pub(super) struct Thumbnail {
+    pub response: egui::Response,
+    pub activated: bool,
+}
 impl App {
     pub(super) fn thumb(
         &mut self,
@@ -7,7 +12,7 @@ impl App {
         url: &str,
         size: f32,
         selected: bool,
-    ) -> egui::Response {
+    ) -> Thumbnail {
         let response = ui.add(
             egui::Button::new("")
                 .min_size(Vec2::splat(size))
@@ -16,7 +21,10 @@ impl App {
         // Discover lays out all rows. Clipped rows must not start downloads or
         // compete with visible thumbnails for the bounded texture cache.
         if !ui.is_rect_visible(response.rect) {
-            return response;
+            return Thumbnail {
+                response,
+                activated: false,
+            };
         }
         let fill = if selected {
             ui.visuals().selection.bg_fill
@@ -32,6 +40,7 @@ impl App {
         };
         ui.painter()
             .rect(response.rect, 8., fill, stroke, egui::StrokeKind::Inside);
+        let retrying = self.failed.contains_key(url) && !self.visuals.contains_key(url);
         if let Some(v) = self.visuals.get_mut(url) {
             v.last_used = ui.ctx().cumulative_frame_nr();
             if response.hovered()
@@ -83,7 +92,10 @@ impl App {
                 self.services.media(provider, url.into(), false);
             }
         }
-        response
+        Thumbnail {
+            activated: response.clicked() && !retrying,
+            response,
+        }
     }
     pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: Vec<LibrarySticker>, picker: bool) {
         if items.is_empty() {
@@ -164,17 +176,18 @@ impl App {
                                     80.,
                                     picker && n == self.selected,
                                 );
-                                r.clone().on_hover_text(format!(
+                                r.response.clone().on_hover_text(format!(
                                     "{}\n{} · {}\nRight-click for more",
                                     item.sticker.label, item.pack_title, item.provider
                                 ));
-                                if r.clicked() {
+                                if r.activated {
                                     if picker {
                                         self.selected = n;
                                     }
                                     self.choose(item.clone(), CopyMode::Auto, picker);
                                 }
-                                r.context_menu(|ui| self.sticker_menu(ui, item, picker));
+                                r.response
+                                    .context_menu(|ui| self.sticker_menu(ui, item, picker));
                             });
                         });
                     }

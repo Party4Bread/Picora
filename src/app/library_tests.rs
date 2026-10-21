@@ -669,6 +669,7 @@ fn evicted_animation_keeps_still_and_reloads_only_on_hover() {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     rect = app
                         .thumb(ui, Provider::Dcinside, "demoted", 84., false)
+                        .response
                         .rect;
                 });
             },
@@ -715,7 +716,10 @@ fn visible_animation_loads_still_first_then_frames_on_hover() {
             },
             |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    rect = app.thumb(ui, Provider::Dcinside, url, 80., false).rect;
+                    rect = app
+                        .thumb(ui, Provider::Dcinside, url, 80., false)
+                        .response
+                        .rect;
                 });
             },
         );
@@ -782,4 +786,51 @@ fn accounts_show_saved_verified_and_failed_session_states() {
     assert!(label(&output, "Connection needs attention").is_some());
     assert!(label(&output, "Website verification required").is_some());
     assert!(label(&output, "Catalog access verified.").is_none());
+}
+
+#[test]
+fn retry_thumbnail_click_does_not_activate_sticker() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    app.failed.insert("broken".into(), "download failed".into());
+    let mut render = |events| {
+        let mut result = None;
+        let _ = ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    result = Some(app.thumb(ui, Provider::Dcinside, "broken", 80., false));
+                });
+            },
+        );
+        result.unwrap()
+    };
+    let center = render(vec![]).response.rect.center();
+    render(vec![
+        egui::Event::PointerMoved(center),
+        egui::Event::PointerButton {
+            pos: center,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        },
+    ]);
+    let response = render(vec![egui::Event::PointerButton {
+        pos: center,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    }]);
+    assert!(response.response.clicked());
+    assert!(!response.activated);
+    assert!(!app.failed.contains_key("broken"));
+    assert!(app.pending.is_none());
 }

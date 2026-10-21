@@ -311,7 +311,7 @@ impl App {
                 ui.horizontal(|ui| {
                     let r = self.thumb(ui, pack.reference.provider, &pack.thumbnail, 84., false);
                     ui.vertical(|ui| {
-                        if ui.link(RichText::new(&pack.title).strong()).clicked() || r.clicked() {
+                        if ui.link(RichText::new(&pack.title).strong()).clicked() || r.activated {
                             self.preview_pack(pack.reference.clone());
                         }
                         ui.label(

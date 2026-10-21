@@ -70,10 +70,15 @@ impl Wayland {
         let (tx, mut rx) = mpsc::channel::<Command>(8);
         tokio::spawn(async move {
             let mut contents: Option<(String, Vec<u8>)> = None;
-            let mut transfers = if let Some(c) = &clipboard {
-                c.receive_selection_transfer().await.ok().map(Box::pin)
-            } else {
-                None
+            let (mut transfers, transfer_error) = match &clipboard {
+                Some(c) => match c.receive_selection_transfer().await {
+                    Ok(stream) => (Some(Box::pin(stream)), None),
+                    Err(error) => (
+                        None,
+                        Some(format!("Clipboard transfer listener unavailable: {error}")),
+                    ),
+                },
+                None => (None, Some("Clipboard portal unavailable".to_owned())),
             };
             let Ok(closed) = session.receive_closed().await else {
                 let _ = session.close().await;
@@ -86,6 +91,7 @@ impl Wayland {
                     cmd=rx.recv()=>match cmd {
                         Some(Command::Copy{asset,original,result})=>{
                             let response=async {
+                                ensure_clipboard_ready(transfer_error.as_deref())?;
                                 let c=clipboard.as_ref().context("Clipboard portal unavailable; trying the desktop clipboard")?;
                                 let (mime,data)=if original {let url=url::Url::from_file_path(&asset.original).map_err(|_|anyhow::anyhow!("Invalid sticker file path"))?;("text/uri-list",format!("{url}\r\n").into_bytes())}else{("image/png",tokio::fs::read(&asset.still).await?)};
                                 c.set_selection(&session,&[mime]).await?;contents=Some((mime.into(),data));Ok(())
@@ -159,4 +165,21 @@ pub async fn shortcuts(trigger: String, activate: impl Fn() + Send + 'static) ->
         }
     }
     Ok(())
+}
+
+fn ensure_clipboard_ready(error: Option<&str>) -> Result<()> {
+    match error {
+        Some(error) => anyhow::bail!("{error}; trying the desktop clipboard"),
+        None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn missing_transfer_listener_cannot_report_copy_success() {
+        assert!(super::ensure_clipboard_ready(None).is_ok());
+        let error = super::ensure_clipboard_ready(Some("listener setup failed")).unwrap_err();
+        assert!(error.to_string().contains("listener setup failed"));
+    }
 }
