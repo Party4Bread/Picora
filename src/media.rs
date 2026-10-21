@@ -86,6 +86,8 @@ fn limits() -> image::Limits {
     l.max_alloc = Some(64 * 1024 * 1024);
     l
 }
+/// # Errors
+/// Rejects unsupported, corrupt, or oversized media and animations exceeding the decoder limits.
 pub fn decode(bytes: &[u8]) -> Result<Decoded> {
     ensure!(bytes.len() <= MAX_ASSET_BYTES, "Image is too large");
     if bytes.get(4..8) == Some(b"ftyp") {
@@ -143,7 +145,7 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded> {
                 width: rgba.width(),
                 height: rgba.height(),
                 rgba: rgba.into_raw(),
-                millis: (num as u64 / den.max(1) as u64).clamp(20, 10_000),
+                millis: (u64::from(num) / u64::from(den.max(1))).clamp(20, 10_000),
             });
         }
     } else {
@@ -165,16 +167,20 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded> {
     })
 }
 impl MediaCache {
+    /// # Errors
+    /// Returns an error if the cache directory cannot be created.
     pub fn new(root: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&root)?;
         Ok(Self {
             root,
-            disk: Default::default(),
+            disk: std::sync::Arc::default(),
         })
     }
     fn dir(&self, url: &str) -> PathBuf {
         self.root.join(hex::encode(Sha256::digest(url.as_bytes())))
     }
+    /// # Errors
+    /// Returns an error on cache locking or filesystem read failures. Missing or corrupt assets are cache misses; metadata migration failure does not invalidate a verified asset.
     pub fn cached(&self, url: &str) -> Result<Option<Asset>> {
         let _guard = self
             .disk
@@ -223,6 +229,8 @@ impl MediaCache {
         Ok(Some(asset))
     }
 
+    /// # Errors
+    /// Rejects invalid or oversized media and reports cache locking, encoding, and filesystem failures. The completion marker is published only after all files are written.
     pub fn save(&self, url: &str, bytes: &[u8]) -> Result<Asset> {
         let decoded = decode(bytes)?;
         let _guard = self
@@ -235,7 +243,7 @@ impl MediaCache {
             MediaFormat::Image(ImageFormat::WebP) => "webp",
             MediaFormat::Image(ImageFormat::Jpeg) => "jpg",
             MediaFormat::Mp4 => "mp4",
-            _ => anyhow::bail!("Unsupported sticker image format"),
+            MediaFormat::Image(_) => anyhow::bail!("Unsupported sticker image format"),
         };
         let dir = self.dir(url);
         std::fs::create_dir_all(&dir)?;
@@ -265,6 +273,8 @@ impl MediaCache {
         Ok(asset)
     }
 
+    /// # Errors
+    /// Returns an error if automatic animation conversion exceeds limits or cannot read, encode, or persist the clipboard file.
     pub fn prepare_copy(&self, mut asset: Asset, mode: CopyMode) -> Result<(Asset, bool)> {
         let file = match mode {
             CopyMode::Still => false,
@@ -288,6 +298,8 @@ impl MediaCache {
 }
 
 /// UI previews use bounded texture dimensions; original clipboard assets remain untouched.
+/// # Errors
+/// Rejects media that cannot be decoded within the size and memory limits.
 pub fn preview(bytes: &[u8]) -> Result<Decoded> {
     let mut decoded = decode(bytes)?;
     for frame in &mut decoded.frames {
@@ -310,6 +322,8 @@ pub fn preview(bytes: &[u8]) -> Result<Decoded> {
 }
 
 /// Idle thumbnails never decode the original animation. Hover previews do.
+/// # Errors
+/// Returns an error if the selected cache file cannot be read or decoded.
 pub fn preview_asset(asset: &Asset, animate: bool) -> Result<Decoded> {
     preview(&std::fs::read(if animate {
         &asset.original

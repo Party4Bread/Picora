@@ -2,6 +2,7 @@ use anyhow::{Result, bail};
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 #[derive(Debug, Clone, Copy)]
 pub struct Target(pub u64);
+#[must_use]
 pub fn capture() -> Option<Target> {
     if super::is_wayland() {
         return Some(Target(0));
@@ -24,7 +25,7 @@ pub fn capture() -> Option<Target> {
         let (conn, _) = x11rb::connect(None).ok()?;
         let focus = conn.get_input_focus().ok()?.reply().ok()?.focus;
         if focus > 1 {
-            return Some(Target(focus as u64));
+            return Some(Target(u64::from(focus)));
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -33,6 +34,7 @@ pub fn capture() -> Option<Target> {
     }
 }
 /// Capture the recipient, excluding Picora's own library and picker windows.
+#[must_use]
 pub fn capture_external() -> Option<Target> {
     let target = capture()?;
     #[cfg(target_os = "windows")]
@@ -62,7 +64,7 @@ pub fn capture_external() -> Option<Target> {
             .reply()
             .ok()?
             .atom;
-        let mut window = target.0 as u32;
+        let mut window = u32::try_from(target.0).ok()?;
         for _ in 0..16 {
             let reply = conn
                 .get_property(false, window, atom, AtomEnum::CARDINAL, 0, 1)
@@ -81,6 +83,8 @@ pub fn capture_external() -> Option<Target> {
     }
     Some(target)
 }
+/// # Errors
+/// Returns an error if the target is invalid, has closed, or the window system refuses focus.
 pub fn restore(target: Target) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
@@ -110,15 +114,22 @@ pub fn restore(target: Target) -> Result<()> {
             return Ok(());
         }
         let (conn, _) = x11rb::connect(None)?;
-        conn.set_input_focus(InputFocus::PARENT, target.0 as u32, x11rb::CURRENT_TIME)?
-            .check()?;
+        conn.set_input_focus(
+            InputFocus::PARENT,
+            u32::try_from(target.0)?,
+            x11rb::CURRENT_TIME,
+        )?
+        .check()?;
         conn.flush()?;
     }
     Ok(())
 }
+#[must_use]
 pub fn may_restore(current: Option<u64>, target: u64, picker: Option<u64>) -> bool {
     current.is_none() || current == Some(target) || current == picker
 }
+/// # Errors
+/// Returns an error if focus changes, the ticket is cancelled, input permission is missing, or keyboard injection fails. macOS requires the main thread.
 pub fn paste(target: Target, picker: Option<Target>, ticket: super::paste::Ticket) -> Result<()> {
     #[cfg(target_os = "macos")]
     anyhow::ensure!(
@@ -129,6 +140,8 @@ pub fn paste(target: Target, picker: Option<Target>, ticket: super::paste::Ticke
     send_paste(target, ticket)
 }
 
+/// # Errors
+/// Returns an error if the ticket is cancelled, another application has focus, or the target cannot be restored.
 pub fn prepare_paste(
     target: Target,
     picker: Option<Target>,
@@ -143,6 +156,8 @@ pub fn prepare_paste(
     Ok(())
 }
 
+/// # Errors
+/// Returns an error on cancellation, changed focus, missing input permission, or keyboard injection failure. macOS requires the main thread.
 pub fn send_paste(target: Target, ticket: super::paste::Ticket) -> Result<()> {
     #[cfg(target_os = "macos")]
     anyhow::ensure!(

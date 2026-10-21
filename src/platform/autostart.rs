@@ -2,6 +2,8 @@
 use anyhow::Context;
 use anyhow::Result;
 use std::path::Path;
+/// # Errors
+/// Returns an error if the platform login configuration cannot be created, updated, or removed.
 pub fn set(enabled: bool, exe: &Path) -> Result<()> {
     #[cfg(target_os = "linux")]
     {

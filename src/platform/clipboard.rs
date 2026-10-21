@@ -8,6 +8,8 @@ pub struct ClipboardService {
     context: Arc<Mutex<Option<ClipboardContext>>>,
 }
 impl ClipboardService {
+    /// # Errors
+    /// Returns an error if the asset cannot be read or clipboard ownership cannot be established. On Wayland, a failed desktop fallback preserves both backend diagnostics.
     pub fn copy(&self, asset: &Asset, original: bool) -> Result<()> {
         #[cfg(target_os = "linux")]
         if super::is_wayland() {
@@ -60,7 +62,7 @@ fn copy_wayland(asset: &Asset, original: bool) -> Result<()> {
 
     let (mime, bytes) = if original {
         let uri = url::Url::from_file_path(&asset.original)
-            .map_err(|_| anyhow!("Invalid sticker file path"))?;
+            .map_err(|()| anyhow!("Invalid sticker file path"))?;
         ("text/uri-list", format!("{uri}\r\n").into_bytes())
     } else {
         (

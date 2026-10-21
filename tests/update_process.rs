@@ -8,7 +8,7 @@ use picora::update::{
 };
 use std::{
     fs,
-    io::{Read, Write},
+    io::{BufRead, Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, Instant},
@@ -103,7 +103,7 @@ fn scenario(mode: &str) -> Result<()> {
         "space 한글/Picora"
     });
     fs::create_dir_all(&root)?;
-    let layout = InstallLayout::for_root(root, target)?;
+    let layout = InstallLayout::for_root(&root, target)?;
     fs::create_dir_all(layout.executable().parent().unwrap())?;
     fs::copy(std::env::current_exe()?, layout.executable())?;
     fs::write(layout.root.join("version.txt"), "old")?;
@@ -121,7 +121,6 @@ fn scenario(mode: &str) -> Result<()> {
         cmd.env("PICORA_TEST_HANG", "1");
     }
     let mut parent = cmd.spawn()?;
-    use std::io::BufRead;
     let stdout = parent.stdout.take().context("Missing parent stdout")?;
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -178,7 +177,7 @@ fn interrupted_recovery() -> Result<()> {
         "Picora"
     });
     fs::create_dir_all(&root)?;
-    let layout = InstallLayout::for_root(root, target)?;
+    let layout = InstallLayout::for_root(&root, target)?;
     fs::create_dir_all(layout.executable().parent().unwrap())?;
     fs::copy(std::env::current_exe()?, layout.executable())?;
     fs::write(layout.root.join("version.txt"), "old")?;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::Sticker;
 
 #[cfg(target_os = "macos")]
 #[test]
@@ -57,7 +58,7 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
     )
     .unwrap();
     App {
-        updates: Default::default(),
+        updates: crate::update::controller::Controller::default(),
         update_health_sent: false,
         packs: store.packs().unwrap(),
         groups: store.groups().unwrap(),
@@ -97,7 +98,7 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         shortcut_status: String::new(),
         #[cfg(target_os = "linux")]
         portal_task: None,
-        _tray: None,
+        tray: None,
         quit: false,
         data_dir: root,
     }
@@ -153,7 +154,7 @@ fn click(app: &mut App, ctx: &egui::Context, pos: egui::Pos2) {
                     pos,
                     button: egui::PointerButton::Primary,
                     pressed,
-                    modifiers: Default::default(),
+                    modifiers: egui::Modifiers::default(),
                 },
             ],
         );
@@ -254,7 +255,7 @@ fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
                     pos,
                     button: egui::PointerButton::Primary,
                     pressed,
-                    modifiers: Default::default(),
+                    modifiers: egui::Modifiers::default(),
                 },
             ],
         );
@@ -272,7 +273,7 @@ fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
                     pos,
                     button: egui::PointerButton::Primary,
                     pressed,
-                    modifiers: Default::default(),
+                    modifiers: egui::Modifiers::default(),
                 },
             ],
         );
@@ -366,7 +367,7 @@ fn picker_enter_does_not_copy_a_sticker_while_a_popup_is_open() {
                 physical_key: None,
                 pressed: true,
                 repeat: false,
-                modifiers: Default::default(),
+                modifiers: egui::Modifiers::default(),
             }],
             ..Default::default()
         },
@@ -375,10 +376,10 @@ fn picker_enter_does_not_copy_a_sticker_while_a_popup_is_open() {
             egui::CentralPanel::default().show(ctx, |ui| {
                 app.grid(
                     ui,
-                    app.items(&app.picker_state.filter, &app.picker_state.search)
+                    &app.items(&app.picker_state.filter, &app.picker_state.search)
                         .unwrap(),
                     View::Picker,
-                )
+                );
             });
         },
     );
@@ -425,8 +426,8 @@ fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
             })
             .expect("accessible sticker button");
         let pos = egui::pos2(
-            ((bounds.x0 + bounds.x1) / 2.) as f32,
-            ((bounds.y0 + bounds.y1) / 2.) as f32,
+            f64::midpoint(bounds.x0, bounds.x1) as f32,
+            f64::midpoint(bounds.y0, bounds.y1) as f32,
         );
         for pressed in [true, false] {
             frame(
@@ -438,7 +439,7 @@ fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
                         pos,
                         button: egui::PointerButton::Secondary,
                         pressed,
-                        modifiers: Default::default(),
+                        modifiers: egui::Modifiers::default(),
                     },
                 ],
             );
@@ -601,7 +602,7 @@ fn animation_cache_pressure_keeps_still_thumbnails() {
             })
             .collect();
         app.cache_visual(
-            index.to_string(),
+            &index.to_string(),
             Visual {
                 frames,
                 delays: vec![100; 3],
@@ -885,7 +886,7 @@ fn group_rendering_preserves_library_and_picker_queries() {
     app.library_state.filter = Filter::Recent;
     app.library_state.search = "library query".into();
     app.picker_state.search = "picker query".into();
-    let _ = ctx.run(Default::default(), |ctx| {
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
         egui::CentralPanel::default().show(ctx, |ui| app.groups_ui(ui));
     });
     assert!(app.library_state.filter == Filter::Recent);

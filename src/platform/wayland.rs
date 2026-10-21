@@ -26,6 +26,8 @@ pub struct Wayland {
     tx: mpsc::Sender<Command>,
 }
 impl Wayland {
+    /// # Errors
+    /// Returns an error if the portal cannot create or start an authorized remote-desktop session.
     pub async fn connect(restore_token: Option<&str>) -> Result<(Self, Option<String>)> {
         let remote = RemoteDesktop::new()
             .await
@@ -93,7 +95,7 @@ impl Wayland {
                             let response=async {
                                 ensure_clipboard_ready(transfer_error.as_deref())?;
                                 let c=clipboard.as_ref().context("Clipboard portal unavailable; trying the desktop clipboard")?;
-                                let (mime,data)=if original {let url=url::Url::from_file_path(&asset.original).map_err(|_|anyhow::anyhow!("Invalid sticker file path"))?;("text/uri-list",format!("{url}\r\n").into_bytes())}else{("image/png",tokio::fs::read(&asset.still).await?)};
+                                let (mime,data)=if original {let url=url::Url::from_file_path(&asset.original).map_err(|()|anyhow::anyhow!("Invalid sticker file path"))?;("text/uri-list",format!("{url}\r\n").into_bytes())}else{("image/png",tokio::fs::read(&asset.still).await?)};
                                 c.set_selection(&session,&[mime]).await?;contents=Some((mime.into(),data));Ok(())
                             }.await;let _=result.send(response);
                         }
@@ -122,6 +124,8 @@ impl Wayland {
         });
         Ok((Self { tx }, restore_token))
     }
+    /// # Errors
+    /// Returns an error if clipboard transfers are unavailable, the asset cannot be read, or the portal worker cannot claim selection.
     pub async fn copy(&self, asset: Asset, original: bool) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.tx
@@ -134,6 +138,8 @@ impl Wayland {
             .context("Wayland session closed; reconnect in Settings")?;
         rx.await?
     }
+    /// # Errors
+    /// Returns an error if the worker has stopped, the ticket was cancelled, or the portal rejects keyboard input.
     pub async fn paste(&self, ticket: crate::platform::paste::Ticket) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.tx
@@ -143,6 +149,8 @@ impl Wayland {
         rx.await?
     }
 }
+/// # Errors
+/// Returns an error if the portal cannot create, bind, or monitor the global-shortcut session.
 pub async fn shortcuts(trigger: String, activate: impl Fn() + Send + 'static) -> Result<()> {
     let proxy = GlobalShortcuts::new()
         .await

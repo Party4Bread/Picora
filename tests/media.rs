@@ -194,7 +194,7 @@ fn mp4_frames_match_independent_reference_in_display_order() {
         let mut error = 0u64;
         for y in 0..32 {
             for x in 0..32 {
-                let expected = reference.get_pixel(index as u32 * 32 + x, y);
+                let expected = reference.get_pixel(u32::try_from(index).unwrap() * 32 + x, y);
                 for channel in 0..3 {
                     error += u64::from(
                         frame.rgba[((y * 32 + x) * 4) as usize + channel]
@@ -217,7 +217,12 @@ fn malformed_mp4_timing_and_sample_sizes_are_errors() {
         (b"mdhd", 16, 0u32, "timescale"),
         (b"stts", 12, 0, "timing"),
         (b"stsc", 12, 0, "chunk"),
-        (b"stsz", 8, original.len() as u32 + 1, "sample size"),
+        (
+            b"stsz",
+            8,
+            u32::try_from(original.len()).unwrap() + 1,
+            "sample size",
+        ),
     ] {
         let mut bytes = original.to_vec();
         let pos = bytes.windows(4).position(|b| b == kind).unwrap() + offset;

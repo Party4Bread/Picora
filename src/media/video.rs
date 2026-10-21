@@ -1,4 +1,4 @@
-//! Decode bounded H.264 MP4 stickers with the statically bundled OpenH264 codec.
+//! Decode bounded H.264 MP4 stickers with the statically bundled `OpenH264` codec.
 use super::Frame;
 use anyhow::{Context, Result, ensure};
 use openh264::{
@@ -91,9 +91,38 @@ fn validate_track(track: &mp4::Mp4Track, input_len: usize) -> Result<ValidatedTr
         track.trak.mdia.mdhd.duration <= 120 * scale,
         "MP4 sticker exceeds two minutes"
     );
+    validate_sample_tables(track, count, scale, input_len)?;
+    let id = track.track_id();
+    let length_size = usize::from((avc.avcc.length_size_minus_one & 3) + 1);
+    let mut header = Vec::new();
+    for nal in avc
+        .avcc
+        .sequence_parameter_sets
+        .iter()
+        .chain(&avc.avcc.picture_parameter_sets)
+    {
+        header.extend_from_slice(&[0, 0, 0, 1]);
+        header.extend_from_slice(&nal.bytes);
+    }
+    ensure!(!header.is_empty(), "MP4 is missing H.264 headers");
+    Ok(ValidatedTrack {
+        id,
+        count,
+        scale,
+        length_size,
+        header,
+    })
+}
+
+fn validate_sample_tables(
+    track: &mp4::Mp4Track,
+    count: u32,
+    scale: u64,
+    input_len: usize,
+) -> Result<()> {
+    let table = &track.trak.mdia.minf.stbl;
     // mp4::read_sample trusts sample tables and allocates the declared sample
     // length before reading. Validate sizes and timing before entering it.
-    let table = &track.trak.mdia.minf.stbl;
     let sizes = &table.stsz;
     ensure!(
         sizes.sample_size as usize <= input_len
@@ -142,6 +171,11 @@ fn validate_track(track: &mp4::Mp4Track, input_len: usize) -> Result<ValidatedTr
             "Invalid MP4 composition timing"
         );
     }
+    validate_chunks(track, count, input_len)
+}
+
+fn validate_chunks(track: &mp4::Mp4Track, count: u32, input_len: usize) -> Result<()> {
+    let table = &track.trak.mdia.minf.stbl;
     ensure!(
         table
             .stsc
@@ -179,26 +213,7 @@ fn validate_track(track: &mp4::Mp4Track, input_len: usize) -> Result<ValidatedTr
             "Invalid MP4 chunk offset"
         );
     }
-    let id = track.track_id();
-    let length_size = usize::from((avc.avcc.length_size_minus_one & 3) + 1);
-    let mut header = Vec::new();
-    for nal in avc
-        .avcc
-        .sequence_parameter_sets
-        .iter()
-        .chain(&avc.avcc.picture_parameter_sets)
-    {
-        header.extend_from_slice(&[0, 0, 0, 1]);
-        header.extend_from_slice(&nal.bytes);
-    }
-    ensure!(!header.is_empty(), "MP4 is missing H.264 headers");
-    Ok(ValidatedTrack {
-        id,
-        count,
-        scale,
-        length_size,
-        header,
-    })
+    Ok(())
 }
 
 fn annex_b(mut remaining: &[u8], length_size: usize) -> Result<Vec<u8>> {
@@ -229,14 +244,18 @@ fn apply_timing(frames: &mut [Frame], timings: &mut [(i64, u32)], scale: u64) ->
     timings.sort_unstable_by_key(|t| t.0);
     let origin = timings[0].0;
     for (index, frame) in frames.iter_mut().enumerate() {
-        let start = timings[index]
-            .0
-            .checked_sub(origin)
-            .context("Invalid MP4 timestamp")? as u64;
-        let end = if let Some(next) = timings.get(index + 1) {
-            next.0
+        let start = u64::try_from(
+            timings[index]
+                .0
                 .checked_sub(origin)
-                .context("Invalid MP4 timestamp")? as u64
+                .context("Invalid MP4 timestamp")?,
+        )?;
+        let end = if let Some(next) = timings.get(index + 1) {
+            u64::try_from(
+                next.0
+                    .checked_sub(origin)
+                    .context("Invalid MP4 timestamp")?,
+            )?
         } else {
             start
                 .checked_add(u64::from(timings[index].1))
@@ -269,8 +288,8 @@ fn frame(yuv: &DecodedYUV<'_>, allocated: &mut usize) -> Result<Frame> {
     yuv.write_rgba8(&mut rgba);
     Ok(Frame {
         rgba,
-        width: width as u32,
-        height: height as u32,
+        width: u32::try_from(width)?,
+        height: u32::try_from(height)?,
         millis: 0,
     })
 }

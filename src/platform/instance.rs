@@ -46,6 +46,8 @@ impl Drop for InstallerGuard {
     }
 }
 impl Instance {
+    /// # Errors
+    /// Returns an error if the instance lock or activation socket is unavailable, or an existing instance cannot be notified.
     pub fn acquire(
         root: &Path,
         library: bool,
@@ -91,7 +93,9 @@ impl Instance {
                     }
                 }
             }
-            return Err(last.unwrap().into());
+            return Err(last
+                .context("Activation connection was not attempted")?
+                .into());
         }
         let listener = ListenerOptions::new()
             .name(name)

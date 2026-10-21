@@ -1,14 +1,17 @@
-use super::*;
+use super::selector;
+use super::{Context, Pack, PackRef, Repository, Result, Url, ensure, read_response};
 use crate::model::Sticker;
-use scraper::{Html, Selector};
+use scraper::Html;
 use serde_json::Value;
 
+/// # Errors
+/// Returns an error if the catalog request fails or its response cannot be parsed.
 pub async fn browse(repo: &Repository, query: &str, page: u32) -> Result<Vec<Pack>> {
     let mut url = Url::parse("https://dccon.dcinside.com/")?;
     {
         let mut path = url
             .path_segments_mut()
-            .map_err(|_| anyhow::anyhow!("Invalid URL"))?;
+            .map_err(|()| anyhow::anyhow!("Invalid URL"))?;
         path.clear()
             .push(if query.trim().is_empty() {
                 "new"
@@ -22,12 +25,14 @@ pub async fn browse(repo: &Repository, query: &str, page: u32) -> Result<Vec<Pac
     }
     parse_catalog(&repo.text(url).await?)
 }
+/// # Errors
+/// Rejects catalogs with missing titles or without recognizable pack-list markup.
 pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
     let doc = Html::parse_document(html);
-    let item = Selector::parse(".div_package[package_idx]").unwrap();
-    let title = Selector::parse(".dcon_name").unwrap();
-    let author = Selector::parse(".dcon_seller").unwrap();
-    let img = Selector::parse("img").unwrap();
+    let item = selector(".div_package[package_idx]")?;
+    let title = selector(".dcon_name")?;
+    let author = selector(".dcon_seller")?;
+    let img = selector("img")?;
     let mut result = Vec::new();
     for node in doc.select(&item) {
         let Some(id) = node.value().attr("package_idx") else {
@@ -62,15 +67,13 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
         });
     }
     ensure!(
-        !result.is_empty()
-            || doc
-                .select(&Selector::parse(".dccon_shop_list").unwrap())
-                .next()
-                .is_some(),
+        !result.is_empty() || doc.select(&selector(".dccon_shop_list")?).next().is_some(),
         "DCInside catalog format changed or access was blocked"
     );
     Ok(result)
 }
+/// # Errors
+/// Returns an error if session initialization, the pack request, or detail parsing fails.
 pub async fn detail(repo: &Repository, r: &PackRef) -> Result<Pack> {
     repo.text(Url::parse(repo.provider.origin())?).await?;
     let token = repo
@@ -99,6 +102,8 @@ fn required<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
         .filter(|s| !s.is_empty())
         .with_context(|| format!("DCInside response missing {key}"))
 }
+/// # Errors
+/// Rejects invalid JSON, missing pack metadata, or a pack with no readable stickers.
 pub fn parse_detail(body: &str) -> Result<Pack> {
     let v: Value = serde_json::from_str(body)
         .context("DCInside pack response changed or the pack is unavailable")?;

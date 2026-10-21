@@ -10,12 +10,14 @@ pub enum Provider {
     Arca,
 }
 impl Provider {
+    #[must_use]
     pub fn id(self) -> &'static str {
         match self {
             Self::Dcinside => "dcinside",
             Self::Arca => "arca",
         }
     }
+    #[must_use]
     pub fn origin(self) -> &'static str {
         match self {
             Self::Dcinside => "https://dccon.dcinside.com/",
@@ -37,15 +39,19 @@ pub struct PackRef {
     pub id: String,
 }
 impl PackRef {
+    #[must_use]
     pub fn key(&self) -> String {
         format!("{}:{}", self.provider.id(), self.id)
     }
+    #[must_use]
     pub fn url(&self) -> String {
         match self.provider {
             Provider::Dcinside => format!("https://dccon.dcinside.com/#{}", self.id),
             Provider::Arca => format!("https://arca.live/e/{}", self.id),
         }
     }
+    /// # Errors
+    /// Rejects URLs outside supported sticker repositories or without a valid pack identifier.
     pub fn parse(input: &str) -> Result<Self> {
         ensure!(
             !input.contains("..") && !input.to_lowercase().contains("%2e"),

@@ -1,6 +1,61 @@
-use super::*;
+use super::{
+    App, Filter, LibrarySticker, PackRef, Provider, RichText, Tab, View, apply_theme, design, egui,
+    platform,
+};
 impl App {
-    pub(super) fn library(&mut self, ctx: &egui::Context) {
+    fn library_collections(&mut self, ui: &mut egui::Ui) {
+        for (label, filter) in [("Favorites", Filter::Favorites), ("Recent", Filter::Recent)] {
+            if design::nav_row(
+                ui,
+                label,
+                self.tab == Tab::Library && self.library_state.filter == filter,
+                None,
+            )
+            .clicked()
+            {
+                self.tab = Tab::Library;
+                self.library_state.filter = filter;
+            }
+        }
+        ui.add_space(8.);
+        ui.label(RichText::new("Saved packs").small().weak());
+        if self.packs.is_empty() {
+            ui.label(RichText::new("No packs yet").small().weak());
+        }
+        for p in &self.packs {
+            let filter = Filter::Pack(p.pack.reference.key());
+            if design::nav_row(
+                ui,
+                &p.pack.title,
+                self.tab == Tab::Library && self.library_state.filter == filter,
+                Some(p.pack.stickers.len()),
+            )
+            .clicked()
+            {
+                self.tab = Tab::Library;
+                self.library_state.filter = filter;
+            }
+        }
+        if !self.groups.is_empty() {
+            ui.add_space(8.);
+            ui.label(RichText::new("Custom groups").small().weak());
+            for g in &self.groups {
+                let filter = Filter::Group(g.id);
+                if design::nav_row(
+                    ui,
+                    &g.name,
+                    self.tab == Tab::Library && self.library_state.filter == filter,
+                    None,
+                )
+                .clicked()
+                {
+                    self.tab = Tab::Library;
+                    self.library_state.filter = filter;
+                }
+            }
+        }
+    }
+    fn library_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("library-nav")
             .resizable(false)
             .exact_width(200.)
@@ -38,58 +93,7 @@ impl App {
                     .id_salt("library-collections")
                     .max_height(height)
                     .show(ui, |ui| {
-                        for (label, filter) in
-                            [("Favorites", Filter::Favorites), ("Recent", Filter::Recent)]
-                        {
-                            if design::nav_row(
-                                ui,
-                                label,
-                                self.tab == Tab::Library && self.library_state.filter == filter,
-                                None,
-                            )
-                            .clicked()
-                            {
-                                self.tab = Tab::Library;
-                                self.library_state.filter = filter;
-                            }
-                        }
-                        ui.add_space(8.);
-                        ui.label(RichText::new("Saved packs").small().weak());
-                        if self.packs.is_empty() {
-                            ui.label(RichText::new("No packs yet").small().weak());
-                        }
-                        for p in &self.packs {
-                            let filter = Filter::Pack(p.pack.reference.key());
-                            if design::nav_row(
-                                ui,
-                                &p.pack.title,
-                                self.tab == Tab::Library && self.library_state.filter == filter,
-                                Some(p.pack.stickers.len()),
-                            )
-                            .clicked()
-                            {
-                                self.tab = Tab::Library;
-                                self.library_state.filter = filter;
-                            }
-                        }
-                        if !self.groups.is_empty() {
-                            ui.add_space(8.);
-                            ui.label(RichText::new("Custom groups").small().weak());
-                            for g in &self.groups {
-                                let filter = Filter::Group(g.id);
-                                if design::nav_row(
-                                    ui,
-                                    &g.name,
-                                    self.tab == Tab::Library && self.library_state.filter == filter,
-                                    None,
-                                )
-                                .clicked()
-                                {
-                                    self.tab = Tab::Library;
-                                    self.library_state.filter = filter;
-                                }
-                            }
-                        }
+                        self.library_collections(ui);
                     });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                     ui.label(RichText::new(&self.settings.shortcut).small().weak());
@@ -113,6 +117,9 @@ impl App {
                     }
                 });
             });
+    }
+    pub(super) fn library(&mut self, ctx: &egui::Context) {
+        self.library_sidebar(ctx);
         egui::TopBottomPanel::bottom("library-status").show(ctx, |ui| self.footer(ui));
         egui::CentralPanel::default()
             .frame(
@@ -165,7 +172,7 @@ impl App {
                         }
                     }
                     ui.separator();
-                    let items = pack
+                    let items: Vec<_> = pack
                         .stickers
                         .iter()
                         .map(|s| LibrarySticker {
@@ -175,7 +182,7 @@ impl App {
                             sticker: s.clone(),
                         })
                         .collect();
-                    self.grid(ui, items, View::Preview);
+                    self.grid(ui, &items, View::Preview);
                 });
             if !open {
                 self.preview = None;
@@ -237,7 +244,7 @@ impl App {
         );
         ui.add_space(8.);
         if let Some(items) = self.load_items(ui, View::Library) {
-            self.grid(ui, items, View::Library);
+            self.grid(ui, &items, View::Library);
         }
     }
     pub(super) fn discover(&mut self, ui: &mut egui::Ui) {
@@ -340,7 +347,7 @@ impl App {
                 match self.store.create_group(&self.group_name) {
                     Ok(id) => {
                         self.chosen_group = Some(id);
-                        self.rename = self.group_name.trim().to_owned();
+                        self.group_name.trim().clone_into(&mut self.rename);
                         self.group_name.clear();
                         self.refresh();
                     }
@@ -378,7 +385,7 @@ impl App {
                 return;
             }
             if let Some(items) = self.load_items(ui, View::Group(id)) {
-                self.grid(ui, items, View::Group(id));
+                self.grid(ui, &items, View::Group(id));
             }
         }
     }
@@ -391,21 +398,21 @@ impl App {
         let account = self.services.account_status.lock().unwrap().clone();
         ui.horizontal_wrapped(|ui| {
             ui.strong("arca.live");
-            let label = if self.login_busy && !account.checking {
+            let label = if self.login_busy && !account.checking() {
                 "Waiting for sign-in…"
             } else {
                 account.label()
             };
-            ui.label(RichText::new(label).color(if account.detail.is_some() {
+            ui.label(RichText::new(label).color(if account.error().is_some() {
                 ui.visuals().error_fg_color
             } else {
                 ui.visuals().text_color()
             }));
         });
-        if account.verified {
+        if account.verified() {
             ui.label("Catalog access verified.");
         }
-        if let Some(error) = &account.detail {
+        if let Some(error) = account.error() {
             ui.colored_label(ui.visuals().error_fg_color, error);
             ui.label("Check your connection, or sign in again to complete website verification.");
         }
@@ -469,7 +476,7 @@ impl App {
                 {
                     self.register_shortcut();
                     if platform::is_wayland() || self.shortcut_status.starts_with("Active:") {
-                        self.settings.shortcut = self.shortcut_text.clone();
+                        self.settings.shortcut.clone_from(&self.shortcut_text);
                         let r = self.store.save_settings(&self.settings);
                         self.report(r, "Shortcut saved");
                     }

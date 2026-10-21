@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    App, BrowseState, Color32, CopyMode, Duration, Filter, LibrarySticker, Provider, Tab, Vec2,
+    View, egui,
+};
 
 pub(super) struct Thumbnail {
     pub response: egui::Response,
@@ -111,41 +114,44 @@ impl App {
             _ => None,
         }
     }
-    pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: Vec<LibrarySticker>, view: View) {
-        let picker = view == View::Picker;
-        if items.is_empty() {
-            ui.add_space(32.);
-            if self
-                .browse_state(view)
-                .is_some_and(|s| !s.search.trim().is_empty())
+    fn empty_grid(&mut self, ui: &mut egui::Ui, view: View) {
+        ui.add_space(32.);
+        if self
+            .browse_state(view)
+            .is_some_and(|s| !s.search.trim().is_empty())
+        {
+            ui.heading("No matching stickers");
+            ui.label("Try another search or clear it to see this collection.");
+            if ui.button("Clear search").clicked()
+                && let Some(state) = self.browse_state_mut(view)
             {
-                ui.heading("No matching stickers");
-                ui.label("Try another search or clear it to see this collection.");
-                if ui.button("Clear search").clicked()
-                    && let Some(state) = self.browse_state_mut(view)
-                {
-                    state.search.clear();
-                }
-            } else if self.packs.is_empty() {
-                ui.heading("Your library is empty");
-                ui.label("Browse a pack and add it to your library.");
-                if ui.button("Browse repositories").clicked() {
-                    self.tab = Tab::Browse;
-                    self.open_library();
-                    self.browse();
-                }
-            } else {
-                ui.heading("No stickers in this collection");
-                ui.label("Choose another pack or manage your stickers in the library.");
-                if ui.button("Show all stickers").clicked() {
-                    if let Some(state) = self.browse_state_mut(view) {
-                        state.filter = Filter::All;
-                    } else {
-                        self.tab = Tab::Library;
-                        self.library_state.filter = Filter::All;
-                    }
+                state.search.clear();
+            }
+        } else if self.packs.is_empty() {
+            ui.heading("Your library is empty");
+            ui.label("Browse a pack and add it to your library.");
+            if ui.button("Browse repositories").clicked() {
+                self.tab = Tab::Browse;
+                self.open_library();
+                self.browse();
+            }
+        } else {
+            ui.heading("No stickers in this collection");
+            ui.label("Choose another pack or manage your stickers in the library.");
+            if ui.button("Show all stickers").clicked() {
+                if let Some(state) = self.browse_state_mut(view) {
+                    state.filter = Filter::All;
+                } else {
+                    self.tab = Tab::Library;
+                    self.library_state.filter = Filter::All;
                 }
             }
+        }
+    }
+    pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: &[LibrarySticker], view: View) {
+        let picker = view == View::Picker;
+        if items.is_empty() {
+            self.empty_grid(ui, view);
             return;
         }
         let columns = ((ui.available_width() + 8.) / 88.).floor().max(1.) as usize;

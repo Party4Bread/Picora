@@ -1,4 +1,4 @@
-use super::*;
+use super::{Color32, egui};
 
 pub(super) fn configure(ctx: &egui::Context) {
     ctx.all_styles_mut(|style| {

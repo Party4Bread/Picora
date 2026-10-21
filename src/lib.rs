@@ -1,3 +1,4 @@
+//! Picora desktop sticker library, repository clients, bounded media cache, and platform integration.
 pub mod app;
 pub mod auth;
 pub mod media;

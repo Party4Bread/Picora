@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Clone, Copy)]
 pub(super) enum Source {
     Video,
     Apng,
@@ -36,19 +37,18 @@ impl MediaCache {
                     .is_ok_and(|d| d.format == MediaFormat::Image(image::ImageFormat::Gif))
             });
         if !valid {
-            let encoded = match source {
+            let output = match source {
                 Source::Video => video_gif(&bytes)?,
                 Source::Apng => apng_gif(&bytes)?,
             };
             ensure!(
-                encoded.len() <= MAX_ASSET_BYTES,
+                output.len() <= MAX_ASSET_BYTES,
                 "Converted animation is too large; use Paste original file"
             );
-            let mut output =
+            let mut file =
                 tempfile::NamedTempFile::new_in(path.parent().context("Missing cache directory")?)?;
-            std::io::Write::write_all(&mut output, &encoded)?;
-            output
-                .persist(&path)
+            std::io::Write::write_all(&mut file, &output)?;
+            file.persist(&path)
                 .context("Cannot save animated clipboard file")?;
         }
         Ok(path)
@@ -57,9 +57,9 @@ impl MediaCache {
 
 fn video_gif(bytes: &[u8]) -> Result<Vec<u8>> {
     let frames = video::decode(bytes)?;
-    let mut encoded = Vec::new();
+    let mut output = Vec::new();
     {
-        let mut encoder = GifEncoder::new(&mut encoded);
+        let mut encoder = GifEncoder::new(&mut output);
         encoder.set_repeat(Repeat::Infinite)?;
         let mut elapsed = 0u64;
         let mut written_ticks = 0u64;
@@ -77,7 +77,7 @@ fn video_gif(bytes: &[u8]) -> Result<Vec<u8>> {
             ))?;
         }
     }
-    Ok(encoded)
+    Ok(output)
 }
 
 fn apng_gif(bytes: &[u8]) -> Result<Vec<u8>> {
@@ -92,9 +92,9 @@ fn apng_gif(bytes: &[u8]) -> Result<Vec<u8>> {
                 .context("Animation repeat count is too large; use Paste original file")?,
         ),
     };
-    let mut encoded = Vec::new();
+    let mut output = Vec::new();
     {
-        let mut encoder = GifEncoder::new(&mut encoded);
+        let mut encoder = GifEncoder::new(&mut output);
         encoder.set_repeat(repeat)?;
         let mut total = 0usize;
         for (index, frame) in decoder.into_frames().enumerate() {
@@ -107,5 +107,5 @@ fn apng_gif(bytes: &[u8]) -> Result<Vec<u8>> {
             encoder.encode_frame(frame)?;
         }
     }
-    Ok(encoded)
+    Ok(output)
 }

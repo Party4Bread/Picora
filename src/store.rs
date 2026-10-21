@@ -1,4 +1,4 @@
-use crate::model::*;
+use crate::model::{Group, LibrarySticker, Pack, SavedPack, Settings};
 use anyhow::{Result, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
@@ -7,9 +7,13 @@ pub struct Store {
     conn: Connection,
 }
 impl Store {
+    /// # Errors
+    /// Returns an error if `SQLite` cannot open the file, initialize the schema, or migrate the library.
     pub fn open(path: &Path) -> Result<Self> {
         Self::init(Connection::open(path)?)
     }
+    /// # Errors
+    /// Returns an error if `SQLite` cannot initialize the in-memory database or schema.
     pub fn open_in_memory() -> Result<Self> {
         Self::init(Connection::open_in_memory()?)
     }
@@ -46,9 +50,13 @@ impl Store {
         }
         Ok(Self { conn })
     }
+    /// # Errors
+    /// Rejects empty packs and reports serialization or transactional database failures.
     pub fn save_pack(&self, pack: &Pack) -> Result<()> {
         self.save_pack_with_favorite(pack, false)
     }
+    /// # Errors
+    /// Rejects empty packs and reports serialization or transactional database failures.
     pub fn save_favorite_pack(&self, pack: &Pack) -> Result<()> {
         self.save_pack_with_favorite(pack, true)
     }
@@ -84,6 +92,8 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+    /// # Errors
+    /// Returns an error if the query fails or a persisted pack cannot be deserialized.
     pub fn packs(&self) -> Result<Vec<SavedPack>> {
         let mut q = self
             .conn
@@ -98,6 +108,8 @@ impl Store {
         })
         .collect()
     }
+    /// # Errors
+    /// Returns an error if the pack is absent or the database update fails.
     pub fn set_pack_favorite(&self, key: &str, value: bool) -> Result<()> {
         let changed = self.conn.execute(
             "UPDATE packs SET favorite=?2 WHERE key=?1",
@@ -106,9 +118,13 @@ impl Store {
         ensure!(changed == 1, "Pack is not in your library");
         Ok(())
     }
+    /// # Errors
+    /// Returns an error on query failure; an absent sticker returns `None`.
     pub fn is_sticker_favorite(&self, pack: &str, sticker: &str) -> Result<Option<bool>> {
         Ok(self.conn.query_row("SELECT COALESCE(s.favorite,p.favorite) FROM stickers s JOIN packs p ON p.key=s.pack WHERE s.pack=?1 AND s.id=?2", params![pack,sticker], |r|r.get(0)).optional()?)
     }
+    /// # Errors
+    /// Returns an error if the sticker is absent or the database update fails.
     pub fn set_sticker_favorite(&self, pack: &str, sticker: &str, favorite: bool) -> Result<()> {
         let changed = self.conn.execute(
             "UPDATE stickers SET favorite=?3 WHERE pack=?1 AND id=?2",
@@ -117,6 +133,8 @@ impl Store {
         ensure!(changed == 1, "Sticker is not in your library");
         Ok(())
     }
+    /// # Errors
+    /// Returns an error if favorite rows or their saved pack data cannot be read.
     pub fn favorite_items(&self) -> Result<Vec<LibrarySticker>> {
         let mut q = self.conn.prepare("SELECT s.pack,s.id FROM stickers s JOIN packs p ON p.key=s.pack WHERE COALESCE(s.favorite,p.favorite)=1 ORDER BY s.pack,s.rowid")?;
         let rows = q
@@ -124,6 +142,8 @@ impl Store {
             .collect::<rusqlite::Result<_>>()?;
         self.resolve_rows(rows)
     }
+    /// # Errors
+    /// Returns an error if the pack or sticker is absent, its data is invalid, or the removal transaction fails.
     pub fn remove_sticker(&self, key: &str, sticker: &str) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let data: String =
@@ -151,10 +171,14 @@ impl Store {
         Ok(())
     }
     /// Succeeds if the requested record is already absent.
+    /// # Errors
+    /// Returns an error if the database deletion fails.
     pub fn remove_pack(&self, key: &str) -> Result<()> {
         self.conn.execute("DELETE FROM packs WHERE key=?1", [key])?;
         Ok(())
     }
+    /// # Errors
+    /// Returns an error if the group query or row decoding fails.
     pub fn groups(&self) -> Result<Vec<Group>> {
         let mut q = self
             .conn
@@ -167,12 +191,16 @@ impl Store {
         })?
         .collect::<rusqlite::Result<_>>()?)
     }
+    /// # Errors
+    /// Rejects blank names and reports database insertion failures.
     pub fn create_group(&self, name: &str) -> Result<i64> {
         ensure!(!name.trim().is_empty(), "Name the group first");
         self.conn
             .execute("INSERT INTO groups(name) VALUES(?1)", [name.trim()])?;
         Ok(self.conn.last_insert_rowid())
     }
+    /// # Errors
+    /// Rejects blank names or missing groups and reports database update failures.
     pub fn rename_group(&self, id: i64, name: &str) -> Result<()> {
         ensure!(!name.trim().is_empty(), "Name cannot be empty");
         let changed = self.conn.execute(
@@ -183,15 +211,21 @@ impl Store {
         Ok(())
     }
     /// Succeeds if the requested record is already absent.
+    /// # Errors
+    /// Returns an error if the database deletion fails.
     pub fn delete_group(&self, id: i64) -> Result<()> {
         self.conn.execute("DELETE FROM groups WHERE id=?1", [id])?;
         Ok(())
     }
+    /// # Errors
+    /// Returns an error if the group or sticker does not exist, or the database insertion fails. Existing membership is accepted.
     pub fn add_to_group(&self, group: i64, pack: &str, sticker: &str) -> Result<()> {
         self.conn.execute("INSERT OR IGNORE INTO group_items(group_id,pack,sticker,position) VALUES(?1,?2,?3,COALESCE((SELECT MAX(position)+1 FROM group_items WHERE group_id=?1),0))",params![group,pack,sticker])?;
         Ok(())
     }
     /// Succeeds if the requested record is already absent.
+    /// # Errors
+    /// Returns an error if the database deletion fails.
     pub fn remove_from_group(&self, group: i64, pack: &str, sticker: &str) -> Result<()> {
         self.conn.execute(
             "DELETE FROM group_items WHERE group_id=?1 AND pack=?2 AND sticker=?3",
@@ -199,17 +233,21 @@ impl Store {
         )?;
         Ok(())
     }
+    /// # Errors
+    /// Returns an error if group contents cannot be read or the new order cannot be committed. Absent membership is unchanged.
     pub fn move_in_group(&self, group: i64, pack: &str, sticker: &str, delta: i32) -> Result<()> {
         let mut items = self.group_items(group)?;
         if let Some(i) = items
             .iter()
             .position(|s| s.pack_key == pack && s.sticker.id == sticker)
         {
-            let j = (i as i32 + delta).clamp(0, items.len() as i32 - 1) as usize;
+            let j = i
+                .saturating_add_signed(isize::try_from(delta)?)
+                .min(items.len() - 1);
             items.swap(i, j);
             let tx = self.conn.unchecked_transaction()?;
             for (n, s) in items.iter().enumerate() {
-                tx.execute("UPDATE group_items SET position=?4 WHERE group_id=?1 AND pack=?2 AND sticker=?3",params![group,s.pack_key,s.sticker.id,n as i64])?;
+                tx.execute("UPDATE group_items SET position=?4 WHERE group_id=?1 AND pack=?2 AND sticker=?3",params![group,s.pack_key,s.sticker.id,i64::try_from(n)?])?;
             }
             tx.commit()?;
         }
@@ -237,6 +275,8 @@ impl Store {
             .collect())
     }
 
+    /// # Errors
+    /// Returns an error if group membership or its saved pack data cannot be read.
     pub fn group_items(&self, group: i64) -> Result<Vec<LibrarySticker>> {
         let mut q = self.conn.prepare(
             "SELECT pack,sticker FROM group_items WHERE group_id=?1 ORDER BY position,pack,sticker",
@@ -246,11 +286,15 @@ impl Store {
             .collect::<rusqlite::Result<_>>()?;
         self.resolve_rows(rows)
     }
+    /// # Errors
+    /// Returns an error if the sticker is absent or its usage order cannot be stored.
     pub fn record_recent(&self, pack: &str, sticker: &str) -> Result<()> {
         self.conn.execute("INSERT INTO recents(pack,sticker,used) VALUES(?1,?2,COALESCE((SELECT MAX(used)+1 FROM recents),1)) ON CONFLICT(pack,sticker) DO UPDATE SET used=excluded.used",params![pack,sticker])?;
 
         Ok(())
     }
+    /// # Errors
+    /// Returns an error if usage ordering or its saved pack data cannot be read.
     pub fn recents(&self) -> Result<Vec<LibrarySticker>> {
         let mut q = self
             .conn
@@ -261,6 +305,8 @@ impl Store {
             .collect::<rusqlite::Result<_>>()?;
         self.resolve_rows(rows)
     }
+    /// # Errors
+    /// Returns an error if saved settings cannot be queried or deserialized; missing settings use defaults.
     pub fn settings(&self) -> Result<Settings> {
         let s: Option<String> = self
             .conn
@@ -273,6 +319,8 @@ impl Store {
             None => Settings::default(),
         })
     }
+    /// # Errors
+    /// Returns an error if settings cannot be serialized or written to `SQLite`.
     pub fn save_settings(&self, s: &Settings) -> Result<()> {
         self.conn.execute("INSERT INTO settings(key,value) VALUES('app',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[serde_json::to_string(s)?])?;
         Ok(())

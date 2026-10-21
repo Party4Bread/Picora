@@ -1,4 +1,6 @@
-use super::*;
+use super::{
+    Action, App, Duration, Event, Instant, LibrarySticker, Result, Shortcut, Visual, egui,
+};
 impl App {
     fn copy_completed(&mut self, ctx: &egui::Context, result: Result<LibrarySticker>) {
         let item = match result {
@@ -39,18 +41,12 @@ impl App {
             );
         }
     }
-    pub(super) fn handle_events(&mut self, ctx: &egui::Context) {
-        if let Some(p) = &mut self.pending
-            && p.from_picker
-            && !ctx.input(|i| i.viewport().focused.unwrap_or(false))
-        {
-            p.flow.cancel_auto();
-        }
+    fn handle_activation(&mut self, ctx: &egui::Context) {
         while let Ok(library) = self.activation.try_recv() {
             if library {
-                self.open_library()
+                self.open_library();
             } else {
-                self.show_picker(ctx)
+                self.show_picker(ctx);
             }
         }
         if self.shortcut.as_ref().is_some_and(Shortcut::triggered) {
@@ -68,6 +64,15 @@ impl App {
                 _ => {}
             }
         }
+    }
+    pub(super) fn handle_events(&mut self, ctx: &egui::Context) {
+        if let Some(p) = &mut self.pending
+            && p.from_picker
+            && !ctx.input(|i| i.viewport().focused.unwrap_or(false))
+        {
+            p.flow.cancel_auto();
+        }
+        self.handle_activation(ctx);
         while let Ok(event) = self.rx.try_recv() {
             match event {
                 Event::UpdateHealthFailed(error) => { self.message(error, true); self.quit = true; },
@@ -115,7 +120,7 @@ impl App {
                                 frames.push(ctx.load_texture(format!("{url}:{i}"), color, egui::TextureOptions::LINEAR));
                                 delays.push(f.millis);
                             }
-                            self.cache_visual(url, Visual { frames, delays, bytes, animation_loaded: animate || !asset.animated, last_used: ctx.cumulative_frame_nr() }, 128 * 1024 * 1024);
+                            self.cache_visual(&url, Visual { frames, delays, bytes, animation_loaded: animate || !asset.animated, last_used: ctx.cumulative_frame_nr() }, 128 * 1024 * 1024);
                         }
                         Err(e) => { self.failed.insert(url, e.to_string()); }
                     }
@@ -163,8 +168,8 @@ impl App {
 }
 
 impl App {
-    pub(super) fn cache_visual(&mut self, url: String, visual: Visual, budget: usize) {
-        self.visuals.insert(url.clone(), visual);
+    pub(super) fn cache_visual(&mut self, url: &str, visual: Visual, budget: usize) {
+        self.visuals.insert(url.to_owned(), visual);
         while self.visuals.values().map(|v| v.bytes).sum::<usize>() > budget {
             // Shed cold animation frames first. Keep every loaded first frame so
             // ordinary redraws never turn an animated thumbnail into a loader.
@@ -172,7 +177,7 @@ impl App {
                 .visuals
                 .iter()
                 .filter(|(_, v)| v.frames.len() > 1)
-                .min_by_key(|(key, v)| (*key == &url, v.last_used))
+                .min_by_key(|(key, v)| (key.as_str() == url, v.last_used))
                 .map(|(key, _)| key.clone());
             if let Some(key) = animation {
                 let v = self.visuals.get_mut(&key).unwrap();
@@ -185,7 +190,7 @@ impl App {
                 let key = self
                     .visuals
                     .iter()
-                    .min_by_key(|(key, v)| (*key == &url, v.last_used))
+                    .min_by_key(|(key, v)| (key.as_str() == url, v.last_used))
                     .map(|(key, _)| key.clone());
                 if let Some(key) = key {
                     self.visuals.remove(&key);

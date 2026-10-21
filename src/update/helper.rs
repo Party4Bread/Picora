@@ -68,7 +68,7 @@ fn receive_with(
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(Duration::from_millis(25))
+                std::thread::sleep(Duration::from_millis(25));
             }
             Err(e) => return Err(e.into()),
         }
@@ -90,6 +90,8 @@ fn acknowledge(address: &str, token: &str) -> Result<()> {
     ensure!(&ok == b"ok", "Acknowledgement rejected");
     Ok(())
 }
+/// # Errors
+/// Returns an error if both health-launch credentials are present but the authenticated handshake fails.
 pub fn acknowledge_health() -> Result<()> {
     if let (Ok(address), Ok(token)) = (
         std::env::var("PICORA_UPDATE_HEALTH_ADDRESS"),
@@ -99,12 +101,15 @@ pub fn acknowledge_health() -> Result<()> {
     }
     Ok(())
 }
+#[must_use]
 pub fn is_health_launch() -> bool {
     std::env::var_os("PICORA_UPDATE_HEALTH_TOKEN").is_some()
 }
 
 /// The caller must keep `directory` until the helper has acknowledged readiness.
 /// On success ownership of staging passes to the helper.
+/// # Errors
+/// Returns an error if the installation or staged update is invalid, the helper cannot start, or its readiness handshake fails.
 pub fn launch_helper(
     layout: InstallLayout,
     staged: StagedUpdate,
@@ -200,6 +205,8 @@ fn wait_pipe() -> Result<()> {
     );
     Ok(())
 }
+/// # Errors
+/// Rejects invalid jobs and reports handoff, installation, health-check, or rollback failures.
 pub fn run_helper(job_path: &Path) -> Result<()> {
     ensure!(
         fs::metadata(job_path)?.len() <= 1024 * 1024,
@@ -225,12 +232,11 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
         );
     }
     ensure!(
-        InstallLayout::for_root(job.layout.root.clone(), job.layout.target)?.root
-            == job.layout.root,
+        InstallLayout::for_root(&job.layout.root, job.layout.target)?.root == job.layout.root,
         "Invalid installation location"
     );
     job.layout.check_writable()?;
-    let _gate = job.layout.startup_gate()?;
+    let startup_guard = job.layout.startup_gate()?;
     #[cfg(windows)]
     let _installer_guard = crate::platform::instance::InstallerGuard::new()?;
     // Validate writable destination before asking the desktop to exit.
@@ -250,7 +256,7 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
     } else {
         recover(&job.layout).and_then(|()| {
             // Recovery is finished; the restored child must be able to acquire its startup gate.
-            fs2::FileExt::unlock(&_gate)?;
+            fs2::FileExt::unlock(&startup_guard)?;
             Command::new(job.layout.executable())
                 .arg("--library")
                 .env_remove("PICORA_UPDATE_HEALTH_ADDRESS")
@@ -269,7 +275,7 @@ pub fn run_helper(job_path: &Path) -> Result<()> {
         );
         // A failed rollback is not hidden by starting a potentially mixed install.
         if recover(&job.layout).is_ok() {
-            let _ = fs2::FileExt::unlock(&_gate);
+            let _ = fs2::FileExt::unlock(&startup_guard);
             let _ = Command::new(job.layout.executable())
                 .env_remove("PICORA_UPDATE_HEALTH_ADDRESS")
                 .env_remove("PICORA_UPDATE_HEALTH_TOKEN")
@@ -315,7 +321,7 @@ fn apply_and_restart(layout: &InstallLayout, staged: &StagedUpdate) -> Result<()
     let result = receive_with(
         &listener,
         &token,
-        Duration::from_secs(60),
+        Duration::from_mins(1),
         || Ok(child.try_wait()?.is_none()),
         || {
             // Commit before telling the replacement it may stay running. If the
@@ -346,6 +352,8 @@ pub struct Startup {
     _gate: Option<fs::File>,
     _helper: Option<ReadyHelper>,
 }
+/// # Errors
+/// Returns an error if installation detection, startup locking, or interrupted-update recovery fails.
 pub fn startup_recovery() -> Result<Startup> {
     let empty = || Startup {
         restarting: false,
@@ -421,6 +429,7 @@ fn cleanup_staging(layout: &InstallLayout) {
         }
     }
 }
+#[must_use]
 pub fn last_failure() -> Option<String> {
     let layout = InstallLayout::detect(&std::env::current_exe().ok()?).ok()?;
     let path = layout.state_dir().ok()?.join("last-error.txt");

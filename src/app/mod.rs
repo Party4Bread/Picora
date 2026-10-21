@@ -7,7 +7,7 @@ mod library;
 mod updates;
 use crate::{
     media::CopyMode,
-    model::*,
+    model::{Group, LibrarySticker, Pack, PackRef, Provider, SavedPack, Settings},
     platform::{
         self,
         focus::{self, Target},
@@ -118,11 +118,13 @@ pub struct App {
     shortcut_status: String,
     #[cfg(target_os = "linux")]
     portal_task: Option<tokio::task::JoinHandle<()>>,
-    _tray: Option<tray_icon::TrayIcon>,
+    tray: Option<tray_icon::TrayIcon>,
     quit: bool,
     data_dir: PathBuf,
 }
 impl App {
+    /// # Errors
+    /// Returns an error if the library database, cache directory, or repository clients cannot initialize.
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         runtime: tokio::runtime::Handle,
@@ -161,7 +163,7 @@ impl App {
             bus,
         )?;
         let mut app = Self {
-            updates: Default::default(),
+            updates: crate::update::controller::Controller::default(),
             update_health_sent: false,
             packs: store.packs()?,
             groups: store.groups()?,
@@ -201,7 +203,7 @@ impl App {
             shortcut_status: String::new(),
             #[cfg(target_os = "linux")]
             portal_task: None,
-            _tray: None,
+            tray: None,
             quit: false,
             data_dir: root,
         };
@@ -217,8 +219,8 @@ impl App {
         if platform::is_wayland() {
             app.services.enable_wayland(true);
         }
-        match make_tray() {
-            Ok(tray) => app._tray = Some(tray),
+        match maketray() {
+            Ok(tray) => app.tray = Some(tray),
             Err(e) => {
                 app.library_open = true;
                 app.message(
@@ -237,7 +239,7 @@ impl App {
         match (self.store.packs(), self.store.groups()) {
             (Ok(p), Ok(g)) => {
                 self.packs = p;
-                self.groups = g
+                self.groups = g;
             }
             (Err(e), _) | (_, Err(e)) => self.message(e.to_string(), true),
         }
@@ -349,14 +351,12 @@ impl App {
                 .packs
                 .iter()
                 .find(|p| p.pack.reference.key() == *key)
-                .map(|p| p.pack.title.clone())
-                .unwrap_or_else(|| "All stickers".into()),
+                .map_or_else(|| "All stickers".into(), |p| p.pack.title.clone()),
             Filter::Group(id) => self
                 .groups
                 .iter()
                 .find(|g| g.id == *id)
-                .map(|g| g.name.clone())
-                .unwrap_or_else(|| "All stickers".into()),
+                .map_or_else(|| "All stickers".into(), |g| g.name.clone()),
         }
     }
     fn items(&self, filter: &Filter, search: &str) -> Result<Vec<LibrarySticker>> {
@@ -446,6 +446,97 @@ impl App {
             }));
         });
     }
+    fn picker_collections(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            for (label, filter) in [
+                ("Favorites", Filter::Favorites),
+                ("Recent", Filter::Recent),
+                ("All", Filter::All),
+            ] {
+                if ui
+                    .selectable_value(&mut self.picker_state.filter, filter, label)
+                    .changed()
+                {
+                    self.picker_state.selected = 0;
+                }
+            }
+            let collection_label = if ui.max_rect().width() < 380. {
+                "More"
+            } else {
+                "Packs & groups"
+            };
+            egui::ComboBox::from_id_salt("collections")
+                .width(if ui.max_rect().width() < 380. {
+                    68.
+                } else {
+                    140.
+                })
+                .selected_text(collection_label)
+                .show_ui(ui, |ui| {
+                    ui.label("Saved packs");
+                    for p in &self.packs {
+                        if ui
+                            .selectable_value(
+                                &mut self.picker_state.filter,
+                                Filter::Pack(p.pack.reference.key()),
+                                &p.pack.title,
+                            )
+                            .changed()
+                        {
+                            self.picker_state.selected = 0;
+                        }
+                    }
+                    if !self.groups.is_empty() {
+                        ui.separator();
+                        ui.label("Custom groups");
+                        for g in &self.groups {
+                            if ui
+                                .selectable_value(
+                                    &mut self.picker_state.filter,
+                                    Filter::Group(g.id),
+                                    &g.name,
+                                )
+                                .changed()
+                            {
+                                self.picker_state.selected = 0;
+                            }
+                        }
+                    }
+                });
+        });
+    }
+    fn picker_pack_shortcuts(&mut self, ui: &mut egui::Ui) {
+        if !self.packs.is_empty() {
+            egui::TopBottomPanel::bottom("picker-packs")
+                .exact_height(48.)
+                .show_separator_line(false)
+                .show_inside(ui, |ui| {
+                    egui::ScrollArea::horizontal()
+                        .id_salt("pack-shortcuts")
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                for p in self.packs.clone() {
+                                    ui.push_id(p.pack.reference.key(), |ui| {
+                                        let filter = Filter::Pack(p.pack.reference.key());
+                                        let thumbnail = self.thumb(
+                                            ui,
+                                            p.pack.reference.provider,
+                                            &p.pack.thumbnail,
+                                            38.,
+                                            self.picker_state.filter == filter,
+                                        );
+                                        thumbnail.response.on_hover_text(&p.pack.title);
+                                        if thumbnail.activated {
+                                            self.picker_state.filter = filter;
+                                            self.picker_state.selected = 0;
+                                        }
+                                    });
+                                }
+                            });
+                        });
+                });
+        }
+    }
     fn picker(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
             .frame(
@@ -504,96 +595,9 @@ impl App {
                 }) {
                     search.surrender_focus();
                 }
-                ui.horizontal_wrapped(|ui| {
-                    for (label, filter) in [
-                        ("Favorites", Filter::Favorites),
-                        ("Recent", Filter::Recent),
-                        ("All", Filter::All),
-                    ] {
-                        if ui
-                            .selectable_value(&mut self.picker_state.filter, filter, label)
-                            .changed()
-                        {
-                            self.picker_state.selected = 0;
-                        }
-                    }
-                    let collection_label = if ui.max_rect().width() < 380. {
-                        "More"
-                    } else {
-                        "Packs & groups"
-                    };
-                    egui::ComboBox::from_id_salt("collections")
-                        .width(if ui.max_rect().width() < 380. {
-                            68.
-                        } else {
-                            140.
-                        })
-                        .selected_text(collection_label)
-                        .show_ui(ui, |ui| {
-                            ui.label("Saved packs");
-                            for p in &self.packs {
-                                if ui
-                                    .selectable_value(
-                                        &mut self.picker_state.filter,
-                                        Filter::Pack(p.pack.reference.key()),
-                                        &p.pack.title,
-                                    )
-                                    .changed()
-                                {
-                                    self.picker_state.selected = 0;
-                                }
-                            }
-                            if !self.groups.is_empty() {
-                                ui.separator();
-                                ui.label("Custom groups");
-                                for g in &self.groups {
-                                    if ui
-                                        .selectable_value(
-                                            &mut self.picker_state.filter,
-                                            Filter::Group(g.id),
-                                            &g.name,
-                                        )
-                                        .changed()
-                                    {
-                                        self.picker_state.selected = 0;
-                                    }
-                                }
-                            }
-                        });
-                });
+                self.picker_collections(ui);
                 egui::TopBottomPanel::bottom("picker-status").show_inside(ui, |ui| self.footer(ui));
-                if !self.packs.is_empty() {
-                    egui::TopBottomPanel::bottom("picker-packs")
-                        .exact_height(48.)
-                        .show_separator_line(false)
-                        .show_inside(ui, |ui| {
-                            egui::ScrollArea::horizontal()
-                                .id_salt("pack-shortcuts")
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        for p in self.packs.clone() {
-                                            ui.push_id(p.pack.reference.key(), |ui| {
-                                                let filter = Filter::Pack(p.pack.reference.key());
-                                                let thumbnail = self
-                                                    .thumb(
-                                                        ui,
-                                                        p.pack.reference.provider,
-                                                        &p.pack.thumbnail,
-                                                        38.,
-                                                        self.picker_state.filter == filter,
-                                                    );
-                                                thumbnail.response.on_hover_text(&p.pack.title);
-                                                if thumbnail.activated
-                                                {
-                                                    self.picker_state.filter = filter;
-                                                    self.picker_state.selected = 0;
-                                                }
-                                            });
-                                        }
-                                    });
-                                });
-                        });
-                }
+                self.picker_pack_shortcuts(ui);
                 ui.add_space(4.);
                 let Some(items) = self.load_items(ui, View::Picker) else { return; };
                 if ctx.content_rect().height() >= 400. {
@@ -608,7 +612,7 @@ impl App {
                     });
                     ui.add_space(4.);
                 }
-                self.grid(ui, items, View::Picker);
+                self.grid(ui, &items, View::Picker);
             });
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.hide_picker(ctx);
@@ -682,7 +686,7 @@ fn apply_theme(ctx: &egui::Context, theme: &str) {
         _ => egui::ThemePreference::System,
     });
 }
-fn make_tray() -> Result<tray_icon::TrayIcon> {
+fn maketray() -> Result<tray_icon::TrayIcon> {
     use tray_icon::{
         Icon, TrayIconBuilder,
         menu::{Menu, MenuItem},

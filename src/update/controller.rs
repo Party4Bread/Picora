@@ -51,6 +51,7 @@ impl Default for Controller {
     }
 }
 impl Controller {
+    #[must_use]
     pub fn busy(&self) -> bool {
         matches!(
             self.state,

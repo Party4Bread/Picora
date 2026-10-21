@@ -99,7 +99,8 @@ impl Services {
                     Some(keyring::Error::NoEntry)
                 ) => {}
             Err(e) => {
-                account_status.detail = Some(format!("Could not load the saved session: {e:#}"))
+                account_status.check =
+                    account::CheckState::Failed(format!("Could not load the saved session: {e:#}"));
             }
         }
         Ok(Self {
@@ -111,15 +112,15 @@ impl Services {
             decode_slots: Arc::new(Semaphore::new(2)),
             clipboard: ClipboardService::default(),
             account_status: Arc::new(Mutex::new(account_status)),
-            cancellation: Default::default(),
+            cancellation: crate::platform::paste::Cancellation::default(),
             #[cfg(target_os = "linux")]
             wayland: Arc::new(Mutex::new(None)),
             #[cfg(target_os = "linux")]
-            wayland_connecting: Default::default(),
+            wayland_connecting: Arc::default(),
         })
     }
     pub fn repo(&self, p: Provider) -> Repository {
-        self.repos.lock().unwrap()[if p == Provider::Dcinside { 0 } else { 1 }].clone()
+        self.repos.lock().unwrap()[usize::from(p != Provider::Dcinside)].clone()
     }
     pub fn browse(&self, p: Provider, query: String, page: u32, id: u64) {
         let s = self.clone();
@@ -279,9 +280,8 @@ impl Services {
                 *s.account_status.lock().unwrap() = account::AccountStatus {
                     has_session: true,
                     saved,
-                    checking: true,
+                    check: account::CheckState::Checking,
                     storage_error,
-                    ..Default::default()
                 };
                 s.bus.ctx.request_repaint();
                 let check = repo
@@ -303,7 +303,7 @@ impl Services {
         });
     }
     pub fn check_arca(&self) {
-        self.account_status.lock().unwrap().checking = true;
+        self.account_status.lock().unwrap().check = account::CheckState::Checking;
         let s = self.clone();
         self.runtime.spawn(async move {
             let result = s
@@ -327,7 +327,7 @@ impl Services {
         *status = account::AccountStatus::default();
         if let Err(e) = &result {
             status.saved = true;
-            status.detail = Some(format!(
+            status.check = account::CheckState::Failed(format!(
                 "Disconnected locally, but the saved session could not be removed: {e:#}. Try Sign out again."
             ));
         }
