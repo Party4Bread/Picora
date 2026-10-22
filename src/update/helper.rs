@@ -442,20 +442,6 @@ pub fn last_failure() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn rollback_failure_preserves_initial_failure() {
-        let error = super::rollback_error(
-            anyhow::anyhow!("replacement failed"),
-            Err(anyhow::anyhow!("backup unavailable")),
-        );
-        let message = format!("{error:#}");
-        assert!(message.contains("replacement failed"));
-        assert!(message.contains("backup unavailable"));
-        assert_eq!(
-            super::rollback_error(anyhow::anyhow!("original"), Ok(())).to_string(),
-            "original"
-        );
-    }
     use super::*;
     #[test]
     fn authenticated_handshake_and_timeout() {

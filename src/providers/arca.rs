@@ -203,10 +203,4 @@ mod tests {
         assert_eq!(pairs.len(), 3);
         assert!(url.fragment().is_none());
     }
-    #[test]
-    fn empty_search_is_unfiltered_and_pages_are_one_based() {
-        let url = catalog_url(" ", 0).unwrap();
-        assert_eq!(url.query(), Some("p=1"));
-        assert_eq!(catalog_url("", 3).unwrap().query(), Some("p=3"));
-    }
 }

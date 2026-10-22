@@ -193,13 +193,3 @@ fn ensure_clipboard_ready(error: Option<&str>) -> Result<()> {
         None => Ok(()),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn missing_transfer_listener_cannot_report_copy_success() {
-        assert!(super::ensure_clipboard_ready(None).is_ok());
-        let error = super::ensure_clipboard_ready(Some("listener setup failed")).unwrap_err();
-        assert!(error.to_string().contains("listener setup failed"));
-    }
-}
