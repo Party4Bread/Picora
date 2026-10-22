@@ -1,6 +1,6 @@
 [package]
 name = "picora"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 description = "Desktop sticker picker for Windows, macOS, and Linux"
 repository = "https://github.com/Party4Bread/Picora"
