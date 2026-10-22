@@ -99,15 +99,7 @@ impl App {
                     if design::nav_row(ui, "Open picker", false, None).clicked() {
                         self.target = None;
                         self.picker_open = true;
-                        self.focus_search = true;
-                        ctx.send_viewport_cmd_to(
-                            egui::ViewportId::ROOT,
-                            egui::ViewportCommand::Visible(true),
-                        );
-                        ctx.send_viewport_cmd_to(
-                            egui::ViewportId::ROOT,
-                            egui::ViewportCommand::Focus,
-                        );
+                        self.focus_picker(ctx);
                     }
                     for (label, tab) in [("Settings", Tab::Settings), ("Accounts", Tab::Accounts)] {
                         if design::nav_row(ui, label, self.tab == tab, None).clicked() {

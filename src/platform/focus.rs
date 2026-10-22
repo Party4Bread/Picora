@@ -4,6 +4,23 @@ use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 /// this API cannot inspect or control individual Wayland windows.
 #[derive(Debug, Clone, Copy)]
 pub struct Target(pub u64);
+#[cfg(target_os = "macos")]
+pub fn activate_current_app() -> Result<()> {
+    anyhow::ensure!(
+        objc2::MainThreadMarker::new().is_some(),
+        "macOS activation must run on the main thread"
+    );
+    // Showing a window can make it key while its menu-bar app is inactive.
+    // Winit then considers it focused and skips its own app activation.
+    // An explicit picker-open action must activate Picora as well as its window.
+    let app = objc2_app_kit::NSRunningApplication::currentApplication();
+    anyhow::ensure!(
+        app.activateWithOptions(objc2_app_kit::NSApplicationActivationOptions::empty()),
+        "macOS did not accept the activation request"
+    );
+    Ok(())
+}
+
 #[must_use]
 pub fn capture() -> Option<Target> {
     if super::is_wayland() {
