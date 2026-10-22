@@ -217,7 +217,8 @@ impl App {
             app.picker_open = false;
         }
         if app.settings.check_updates_automatically {
-            app.updates.check(&app.services.runtime, ctx);
+            app.updates
+                .check(&app.services.runtime, ctx, app.settings.update_channel);
         }
         app.register_shortcut(false);
         #[cfg(target_os = "linux")]

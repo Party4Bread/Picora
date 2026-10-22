@@ -6,9 +6,63 @@ use std::{collections::HashSet, path::Path, time::Duration};
 use tokio::io::AsyncWriteExt;
 use url::Url;
 
+pub const BUILD_VERSION: &str = match option_env!("PICORA_BUILD_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Channel {
+    #[default]
+    Stable,
+    Dev,
+}
+
+fn dev_run(version: &Version) -> Option<u64> {
+    let parts: Vec<_> = version.pre.as_str().split('.').collect();
+    if parts.len() != 3 || parts[0] != "dev" || !version.build.is_empty() {
+        return None;
+    }
+    let hash = parts[2].strip_prefix('g')?;
+    if hash.len() != 12 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    parts[1].parse().ok()
+}
+
+/// # Errors
+/// Rejects invalid versions in release metadata or the running build.
+pub fn update_available(current: &str, release: &Release, channel: Channel) -> Result<bool> {
+    if release.draft {
+        return Ok(false);
+    }
+    let candidate = Version::parse(
+        release
+            .tag_name
+            .strip_prefix('v')
+            .context("Invalid release tag")?,
+    )?;
+    let current = Version::parse(current)?;
+    match channel {
+        Channel::Stable => {
+            if release.prerelease || !candidate.pre.is_empty() || !candidate.build.is_empty() {
+                return Ok(false);
+            }
+            Ok(dev_run(&current).is_some() || candidate > current)
+        }
+        Channel::Dev => {
+            let Some(run) = dev_run(&candidate).filter(|_| release.prerelease) else {
+                return Ok(false);
+            };
+            Ok(dev_run(&current).is_none_or(|installed| run > installed))
+        }
+    }
+}
+
 pub const REPOSITORY: &str = "https://github.com/Party4Bread/Picora";
 pub const MAX_ARCHIVE: u64 = 256 * 1024 * 1024;
-const MAX_METADATA: u64 = 1024 * 1024;
+const MAX_METADATA: u64 = 8 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Target {
@@ -128,8 +182,9 @@ pub fn select_update(
     target: Target,
     release: &Release,
     manifest: Manifest,
+    channel: Channel,
 ) -> Result<Option<AvailableUpdate>> {
-    if release.draft || release.prerelease || !newer(current, &release.tag_name)? {
+    if !update_available(current, release, channel)? {
         return Ok(None);
     }
     ensure!(
@@ -234,31 +289,65 @@ impl ReleaseClient {
     }
     /// # Errors
     /// Returns an error if release metadata cannot be fetched or validated.
-    pub async fn check(&self, current: &str, target: Target) -> Result<Option<AvailableUpdate>> {
-        let release: Release = match self
-            .metadata("https://api.github.com/repos/Party4Bread/Picora/releases/latest")
-            .await
-        {
-            Ok(r) => r,
-            Err(e)
-                if e.downcast_ref::<reqwest::Error>()
-                    .and_then(reqwest::Error::status)
-                    == Some(reqwest::StatusCode::NOT_FOUND) =>
-            {
-                return Ok(None);
+    pub async fn check(
+        &self,
+        current: &str,
+        target: Target,
+        channel: Channel,
+    ) -> Result<Option<AvailableUpdate>> {
+        let release = match channel {
+            Channel::Stable => {
+                match self
+                    .metadata::<Release>(
+                        "https://api.github.com/repos/Party4Bread/Picora/releases/latest",
+                    )
+                    .await
+                {
+                    Ok(release) => Some(release),
+                    Err(error)
+                        if error
+                            .downcast_ref::<reqwest::Error>()
+                            .and_then(reqwest::Error::status)
+                            == Some(reqwest::StatusCode::NOT_FOUND) =>
+                    {
+                        None
+                    }
+                    Err(error) => {
+                        return Err(error.context(
+                            "Cannot check GitHub Releases; retry later if offline or rate limited",
+                        ));
+                    }
+                }
             }
-            Err(e) => {
-                return Err(e.context(
-                    "Cannot check GitHub Releases; retry later if offline or rate limited",
-                ));
+            Channel::Dev => {
+                let releases: Vec<Release> = self
+                    .metadata(
+                        "https://api.github.com/repos/Party4Bread/Picora/releases?per_page=100",
+                    )
+                    .await
+                    .context(
+                        "Cannot check development builds; retry later if offline or rate limited",
+                    )?;
+                releases
+                    .into_iter()
+                    .filter(|release| !release.draft && release.prerelease)
+                    .filter_map(|release| {
+                        let version = Version::parse(release.tag_name.strip_prefix('v')?).ok()?;
+                        Some((dev_run(&version)?, release))
+                    })
+                    .max_by_key(|(run, _)| *run)
+                    .map(|(_, release)| release)
             }
         };
-        if release.draft || release.prerelease || !newer(current, &release.tag_name)? {
+        let Some(release) = release else {
+            return Ok(None);
+        };
+        if !update_available(current, &release, channel)? {
             return Ok(None);
         }
         let a = release_asset(&release, "update-manifest.json")?;
         let manifest = self.metadata(&a.browser_download_url).await?;
-        select_update(current, target, &release, manifest)
+        select_update(current, target, &release, manifest, channel)
     }
     /// # Errors
     /// Rejects unsuccessful or oversized responses and size or digest mismatches; reports network and file I/O failures.

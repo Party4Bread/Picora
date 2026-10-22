@@ -28,6 +28,10 @@ jobs:
           PY
   build:
     needs: validate
+    # The reusable workflow declares a dev publishing job; tags skip that job,
+    # but GitHub still validates its permission ceiling at call time.
+    permissions:
+      contents: write
     uses: ./.github/workflows/ci.yml
   publish:
     needs: build

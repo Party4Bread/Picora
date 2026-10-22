@@ -1,5 +1,8 @@
 use super::{App, egui};
-use crate::update::{controller::State, release::REPOSITORY};
+use crate::update::{
+    controller::State,
+    release::{BUILD_VERSION, Channel, REPOSITORY},
+};
 impl App {
     pub(super) fn update_notice(&mut self, ui: &mut egui::Ui) {
         let State::Available(update) = &self.updates.state else {
@@ -18,7 +21,39 @@ impl App {
     pub(super) fn updates_ui(&mut self, ui: &mut egui::Ui) {
         ui.separator();
         ui.heading("Updates");
-        ui.label(format!("Picora {}", env!("CARGO_PKG_VERSION")));
+        ui.label(format!("Picora {}", BUILD_VERSION));
+        let previous_channel = self.settings.update_channel;
+        ui.add_enabled_ui(!self.updates.busy(), |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Update channel");
+                egui::ComboBox::from_id_salt("update-channel")
+                    .selected_text(match self.settings.update_channel {
+                        Channel::Stable => "Stable",
+                        Channel::Dev => "Dev",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.settings.update_channel,
+                            Channel::Stable,
+                            "Stable",
+                        );
+                        ui.selectable_value(&mut self.settings.update_channel, Channel::Dev, "Dev");
+                    });
+            });
+        });
+        if self.settings.update_channel == Channel::Dev {
+            ui.label("Latest main build that passed CI. May contain unfinished changes.");
+        }
+        if previous_channel != self.settings.update_channel {
+            self.updates.cancel();
+            let result = self.store.save_settings(&self.settings);
+            self.report(result, "Update channel saved");
+            self.updates.check(
+                &self.services.runtime,
+                ui.ctx(),
+                self.settings.update_channel,
+            );
+        }
         if let Some(error) = &self.updates.previous_failure {
             ui.colored_label(ui.visuals().error_fg_color, error);
         }
@@ -36,7 +71,11 @@ impl App {
             .add_enabled(!self.updates.busy(), egui::Button::new("Check for updates"))
             .clicked()
         {
-            self.updates.check(&self.services.runtime, ui.ctx());
+            self.updates.check(
+                &self.services.runtime,
+                ui.ctx(),
+                self.settings.update_channel,
+            );
         }
         let mut install = false;
         let mut cancel = false;
@@ -47,7 +86,7 @@ impl App {
                 ui.label("Checking GitHub Releases…");
             }
             State::Current => {
-                ui.label("No newer release is available.");
+                ui.label("No update is available on this channel.");
             }
             State::Available(update) => {
                 ui.label(format!("Picora {} is available", update.version));

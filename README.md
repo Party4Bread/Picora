@@ -39,6 +39,8 @@ GIPHY: open **Library → GIPHY**, enter your API key, and choose **Use and save
 
 Download these files from [GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest).
 
+Choose **Settings → Updates → Update channel → Dev** to receive the newest main build that passed all platform CI checks. Dev builds may contain unfinished changes. Updates still require **Update and restart**; choose **Stable** to return to the latest stable release. Documentation-only commits do not produce a new build.
+
 - **Windows:** the installer is unsigned. Website sign-in requires WebView2. Quit Picora before a manual upgrade or uninstall; uninstalling preserves your library and settings.
 - **macOS:** builds are ad-hoc signed, not Apple-notarized. Read the [macOS installation guide](docs/MACOS-INSTALL.md) if Gatekeeper blocks launch. Intel Mac builds are not currently provided.
 - **Linux:** install the system libraries listed under [building from source](#build-from-source). Picker windows require X11 or XWayland.

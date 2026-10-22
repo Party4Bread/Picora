@@ -1,5 +1,6 @@
 """Create portable archives and an ad-hoc-signed macOS disk image from `cargo build --release`. No publishing."""
 from pathlib import Path
+import os
 import platform
 import plistlib
 import shutil
@@ -10,6 +11,7 @@ import zipfile
 
 root = Path(__file__).resolve().parent.parent
 version = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
+archive_version = os.environ.get("PICORA_BUILD_VERSION", version)
 system = platform.system()
 stage = root / "target" / "package" / system / "Picora"
 if stage.exists():
@@ -48,7 +50,7 @@ arch = {"AMD64": "x86_64", "x86_64": "x86_64", "arm64": "aarch64", "aarch64": "a
 if arch is None:
     raise RuntimeError(f"Unsupported architecture: {platform.machine()}")
 os_name = "macos" if system == "Darwin" else system.lower()
-name = f"picora-{version}-{os_name}-{arch}"
+name = f"picora-{archive_version}-{os_name}-{arch}"
 if system == "Linux":
     with tarfile.open(out / f"{name}.tar.gz", "w:gz") as archive:
         archive.add(stage, arcname="Picora")

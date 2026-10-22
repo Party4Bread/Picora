@@ -16,4 +16,19 @@ class ManifestTests(unittest.TestCase):
             (root / 'picora-0.2.0-windows-x86_64.zip').unlink()
             with self.assertRaises(ValueError): create_manifest(root, '0.2.0', 'v0.2.0')
 
+    def test_dev_manifest_is_complete_and_rejected_by_stable_publisher(self):
+        version = '0.1.8-dev.123.gabcdef123456'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for suffix in ['windows-x86_64.zip', 'linux-x86_64.tar.gz', 'macos-aarch64.zip']:
+                (root / f'picora-{version}-{suffix}').write_bytes(b'dev build')
+            with self.assertRaises(ValueError):
+                create_manifest(root, version, f'v{version}')
+            manifest = create_manifest(root, version, f'v{version}', dev=True)
+            self.assertEqual(manifest['version'], version)
+            self.assertEqual(len(manifest['targets']), 3)
+            (root / f'picora-{version}-macos-aarch64.zip').unlink()
+            with self.assertRaises(ValueError):
+                create_manifest(root, version, f'v{version}', dev=True)
+
 if __name__ == '__main__': unittest.main()

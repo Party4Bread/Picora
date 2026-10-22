@@ -39,6 +39,8 @@ GIPHY는 **Library → GIPHY**에서 개인 API 키를 입력한 후 **Use and s
 
 파일은 [GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest)에서 다운로드할 수 있습니다.
 
+**Settings → Updates → Update channel → Dev**에서 모든 플랫폼 CI 검증을 통과한 최신 main 빌드를 받을 수 있습니다. Dev 빌드에는 미완성 변경이 포함될 수 있습니다. 설치하려면 **Update and restart**를 눌러야 하며, **Stable**을 선택하면 최신 안정 릴리스로 돌아갈 수 있습니다. 문서만 변경한 커밋은 새 빌드를 만들지 않습니다.
+
 - **Windows:** 설치 프로그램에는 코드 서명이 없습니다. 웹사이트 로그인에는 WebView2가 필요합니다. 수동 업데이트나 제거 전에 Picora를 종료하세요. 제거해도 라이브러리와 설정은 유지됩니다.
 - **macOS:** 임시 서명(ad-hoc)을 사용하며 Apple 공증을 받지 않았습니다. Gatekeeper가 실행을 차단하면 [macOS 설치 안내](docs/MACOS-INSTALL.md)를 확인하세요. Intel Mac용 빌드는 현재 제공하지 않습니다.
 - **Linux:** [소스에서 빌드](#소스에서-빌드)에 나열된 시스템 라이브러리가 필요합니다. 선택기 창에는 X11 또는 XWayland가 필요합니다.
