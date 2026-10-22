@@ -157,7 +157,6 @@ impl App {
                 v.bytes = width * height * 4;
                 v.animation_loaded = false;
             } else {
-                // Bound the still cache too when browsing very large libraries.
                 let key = self
                     .visuals
                     .iter()

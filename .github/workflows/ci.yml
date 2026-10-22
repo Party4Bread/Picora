@@ -17,7 +17,47 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.filter.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Check for build changes
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import subprocess
+
+          event, ref = os.environ['EVENT'], os.environ['REF']
+          base, head = os.environ['BASE'], os.environ['HEAD']
+          build = True
+          if event in ('pull_request', 'push') and not ref.startswith('refs/tags/') and base.strip('0'):
+              if event == 'pull_request':
+                  base = subprocess.check_output(['git', 'merge-base', base, head], text=True).strip()
+              paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', base, head]).split(b'\0')
+              def documentation(path):
+                  return (path.startswith(b'docs/') and path.endswith(b'.md')) or (
+                      b'/' not in path and path.endswith(b'.md') and (
+                          path == b'README.md' or path.startswith(b'README-')
+                      )
+                  )
+              build = any(path and not documentation(path) for path in paths)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'build={str(build).lower()}\n')
+          print('Desktop build required' if build else 'Documentation-only change: desktop builds skipped')
+          PYTHON
   build:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.build == 'true') }}
     timeout-minutes: 45
     strategy:
       fail-fast: false

@@ -264,7 +264,6 @@ impl MediaCache {
         Ok(asset)
     }
 
-    /// Resolve clipboard content before choosing the native or portal backend.
     pub fn prepare_copy(&self, mut asset: Asset, mode: CopyMode) -> Result<(Asset, bool)> {
         let file = match mode {
             CopyMode::Still => false,

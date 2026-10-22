@@ -21,7 +21,6 @@ fn arca_login_and_unrecognized_pages_are_not_empty_catalogs() {
 }
 #[test]
 fn arca_extracts_packs_and_assets_from_documented_shape() {
-    // Synthetic fixture: live authenticated Arca verification is separate.
     let page = arca::parse_catalog(r#"<div class="emoticon-list"><a href="/e/123"><img src="//ac-p.namu.la/thumb.png"><span class="title">테스트</span></a></div>"#).unwrap();
     assert_eq!(page[0].reference.id, "123");
     let pack = arca::parse_detail("123", r#"<article><div class="emoticon-header"><div class="emoticon-info"><div class="title">테스트</div></div></div><div class="article-body emoticon-body"><img class="emoticon" src="//ac-p.namu.la/2026/a.gif" data-id="1"><img class="emoticon" src="//ac-p.namu.la/2026/b.png" data-id="2"></div></article>"#).unwrap();
@@ -31,7 +30,6 @@ fn arca_extracts_packs_and_assets_from_documented_shape() {
 
 #[test]
 fn arca_detail_uses_selected_pack_not_catalog_heading_or_thumbnails() {
-    // Reduced structural fixture based on Arca's pack-specific header/body selectors.
     // Deliberately includes the store heading and unrelated catalog media first.
     let html = r#"
       <h1>전체 아카콘</h1>

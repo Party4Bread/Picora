@@ -1,4 +1,3 @@
-//! Picora's reusable domain and services.
 pub mod app;
 pub mod auth;
 pub mod media;

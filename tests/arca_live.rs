@@ -1,11 +1,11 @@
-//! Manual signed-in smoke check. Never prints session cookies or account details.
 use picora::{
     auth,
     model::Provider,
     providers::{Repository, StickerProvider},
 };
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+#[tokio::test]
+#[ignore = "requires a saved Arca session and live repository access"]
+async fn saved_session_search_and_thumbnails() -> anyhow::Result<()> {
     let cookies = auth::load()?;
     anyhow::ensure!(!cookies.is_empty(), "No saved Arca session");
     let repo = Repository::new(Provider::Arca)?;

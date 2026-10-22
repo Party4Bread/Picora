@@ -1,4 +1,3 @@
-//! Arca HTML adapter. Synthetic fixtures cover parsing; authenticated live verification is required.
 use super::*;
 use crate::model::Sticker;
 use scraper::{Html, Selector};
@@ -28,7 +27,7 @@ fn check_access(html: &str) -> Result<()> {
         )
         .next()
         .is_none(),
-        "Arca session expired or requires website verification. Reconnect in Accounts."
+        "arca.live session expired or requires website verification. Reconnect in Accounts."
     );
     Ok(())
 }
@@ -103,13 +102,13 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
                 .next()
                 .is_some()
                 && (html.contains("검색 결과가 없습니다") || html.contains("검색 결과 없음"))),
-        "Arca catalog could not be read. Sign in, or check whether the website format changed."
+        "arca.live catalog could not be read. Sign in, or check whether the website format changed."
     );
     Ok(packs)
 }
 fn asset_url(raw: &str) -> Result<String> {
     let url = Url::parse("https://arca.live/")?.join(raw)?;
-    ensure!(allowed_url(&url), "Unsupported Arca image host");
+    ensure!(allowed_url(&url), "Unsupported arca.live image host");
     Ok(url.into())
 }
 pub async fn detail(repo: &Repository, r: &PackRef) -> Result<Pack> {
@@ -124,13 +123,13 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
         .next()
         .map(|n| n.text().collect::<String>())
         .filter(|t| !t.trim().is_empty())
-        .context("Arca did not return a sticker pack. Open its source page and reconnect in Accounts if needed.")?;
+        .context("arca.live did not return a sticker pack. Open its source page and reconnect in Accounts if needed.")?;
     // The store navigation and recommendations also contain sticker thumbnails.
     // Only the selected pack's body is a source of clipboard assets.
     let body = doc
         .select(&Selector::parse("article .article-body.emoticon-body").unwrap())
         .next()
-        .context("Arca pack content missing; the website format may have changed")?;
+        .context("arca.live pack content missing; the website format may have changed")?;
     let mut stickers = Vec::new();
     let mut seen = HashSet::new();
     for node in body.select(&Selector::parse("img.emoticon, video.emoticon").unwrap()) {
@@ -165,7 +164,7 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
     }
     ensure!(
         !stickers.is_empty(),
-        "Arca pack has no readable sticker images. Sign in or check the website format."
+        "arca.live pack has no readable sticker images. Sign in or check the website format."
     );
     Ok(Pack {
         url: reference.url(),

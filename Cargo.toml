@@ -2,7 +2,11 @@
 name = "picora"
 version = "0.1.7"
 edition = "2024"
-description = "A cross-platform sticker picker for DCInside and Arca"
+description = "Desktop sticker picker for Windows, macOS, and Linux"
+repository = "https://github.com/Party4Bread/Picora"
+readme = "README.md"
+keywords = ["stickers", "clipboard", "desktop", "picker", "egui"]
+categories = ["gui"]
 
 [dependencies]
 semver = "1"
@@ -71,7 +75,6 @@ strip = true
 [patch.crates-io]
 eframe = { path = "vendor/eframe" }
 
-[[example]]
-name = "update_test_child"
-test = true
+[[test]]
+name = "update_process"
 harness = false
