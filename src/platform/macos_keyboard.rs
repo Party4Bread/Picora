@@ -39,7 +39,9 @@ pub fn paste_keycode() -> Result<u16> {
         !source.is_null(),
         "No ASCII keyboard layout; paste manually with Cmd+V"
     );
+    // SAFETY: the non-null Copy result transfers one retained reference into CFType.
     let source = unsafe { CFType::wrap_under_create_rule(source) };
+    // SAFETY: source owns a live input source; this property key returns borrowed CFData.
     let data = unsafe {
         TISGetInputSourceProperty(source.as_CFTypeRef(), kTISPropertyUnicodeKeyLayoutData)
     };
@@ -47,7 +49,9 @@ pub fn paste_keycode() -> Result<u16> {
         !data.is_null(),
         "Keyboard layout unavailable; paste manually with Cmd+V"
     );
+    // SAFETY: the non-null property is CFData; the get-rule wrapper retains it before source drops.
     let data = unsafe { CFData::wrap_under_get_rule(data.cast()) };
+    // SAFETY: parameterless Carbon query, executed on the checked main thread.
     let keyboard_type = unsafe { u32::from(LMGetKbdType()) };
     find_paste_key(|keycode| {
         let mut dead_keys = 0;

@@ -46,6 +46,8 @@ impl Drop for InstallerGuard {
     }
 }
 impl Instance {
+    /// # Errors
+    /// Returns an error if the instance lock or activation socket is unavailable, or an existing instance cannot be notified.
     pub fn acquire(
         root: &Path,
         library: bool,
@@ -74,7 +76,12 @@ impl Instance {
         } else {
             socket.to_fs_name::<GenericFilePath>()?
         };
-        if lock.try_lock_exclusive().is_err() {
+        if let Err(error) = lock.try_lock_exclusive() {
+            if error.raw_os_error() != fs2::lock_contended_error().raw_os_error() {
+                return Err(error).with_context(|| {
+                    format!("Cannot lock {}", root.join("instance.lock").display())
+                });
+            }
             if background {
                 return Ok(None);
             }
@@ -91,7 +98,9 @@ impl Instance {
                     }
                 }
             }
-            return Err(last.unwrap().into());
+            return Err(last
+                .context("Activation connection was not attempted")?
+                .into());
         }
         let listener = ListenerOptions::new()
             .name(name)

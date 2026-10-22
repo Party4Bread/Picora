@@ -1,4 +1,7 @@
+mod conversion;
 mod video;
+
+pub(crate) const MAX_ASSET_BYTES: usize = 25 * 1024 * 1024;
 use anyhow::{Context, Result, ensure};
 use image::{AnimationDecoder, ImageDecoder, ImageFormat, ImageReader};
 use sha2::{Digest, Sha256};
@@ -51,7 +54,7 @@ struct CacheMetadata {
 fn asset_hashes(asset: &Asset) -> Result<[String; 3]> {
     let hash = |path: &PathBuf| -> Result<String> {
         ensure!(
-            std::fs::metadata(path)?.len() <= super::providers::MAX_DOWNLOAD as u64,
+            std::fs::metadata(path)?.len() <= MAX_ASSET_BYTES as u64,
             "Cached image is too large"
         );
         Ok(hex::encode(Sha256::digest(std::fs::read(path)?)))
@@ -83,11 +86,14 @@ fn limits() -> image::Limits {
     l.max_alloc = Some(64 * 1024 * 1024);
     l
 }
+/// Decodes a bounded preview, retaining source animation metadata even when only
+/// part of an animation fits. GIF/APNG/WebP previews stop at 120 frames or the
+/// decoded-memory budget; MP4 validation decodes within hard limits before truncation.
+/// # Errors
+/// Rejects unsupported, corrupt, or oversized input and hard decoder-limit failures.
+/// Reaching a preview frame budget successfully returns the frames collected so far.
 pub fn decode(bytes: &[u8]) -> Result<Decoded> {
-    ensure!(
-        bytes.len() <= super::providers::MAX_DOWNLOAD,
-        "Image is too large"
-    );
+    ensure!(bytes.len() <= MAX_ASSET_BYTES, "Image is too large");
     if bytes.get(4..8) == Some(b"ftyp") {
         let mut frames = video::decode(bytes)?;
         frames.truncate(120);
@@ -143,7 +149,7 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded> {
                 width: rgba.width(),
                 height: rgba.height(),
                 rgba: rgba.into_raw(),
-                millis: (num as u64 / den.max(1) as u64).clamp(20, 10_000),
+                millis: (u64::from(num) / u64::from(den.max(1))).clamp(20, 10_000),
             });
         }
     } else {
@@ -165,16 +171,22 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded> {
     })
 }
 impl MediaCache {
+    /// # Errors
+    /// Returns an error if the cache directory cannot be created.
     pub fn new(root: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&root)?;
         Ok(Self {
             root,
-            disk: Default::default(),
+            disk: std::sync::Arc::default(),
         })
     }
     fn dir(&self, url: &str) -> PathBuf {
         self.root.join(hex::encode(Sha256::digest(url.as_bytes())))
     }
+    /// # Errors
+    /// Returns an error on cache locking, completion-marker reads, or legacy-validation reads.
+    /// Missing, corrupt, or unreadable asset files found during hash verification are cache misses.
+    /// Metadata migration failure does not invalidate a verified asset.
     pub fn cached(&self, url: &str) -> Result<Option<Asset>> {
         let _guard = self
             .disk
@@ -218,10 +230,13 @@ impl MediaCache {
             return Ok(None);
         }
         asset.animated = decoded.animated;
-        save_metadata(&asset, &extension, hashes)?;
+        // Migration is an optimization; validated legacy assets remain usable on read-only storage.
+        let _ = save_metadata(&asset, &extension, hashes);
         Ok(Some(asset))
     }
 
+    /// # Errors
+    /// Rejects invalid or oversized media and reports cache locking, encoding, and filesystem failures. The completion marker is published only after all files are written.
     pub fn save(&self, url: &str, bytes: &[u8]) -> Result<Asset> {
         let decoded = decode(bytes)?;
         let _guard = self
@@ -234,7 +249,7 @@ impl MediaCache {
             MediaFormat::Image(ImageFormat::WebP) => "webp",
             MediaFormat::Image(ImageFormat::Jpeg) => "jpg",
             MediaFormat::Mp4 => "mp4",
-            _ => anyhow::bail!("Unsupported sticker image format"),
+            MediaFormat::Image(_) => anyhow::bail!("Unsupported sticker image format"),
         };
         let dir = self.dir(url);
         std::fs::create_dir_all(&dir)?;
@@ -264,6 +279,8 @@ impl MediaCache {
         Ok(asset)
     }
 
+    /// # Errors
+    /// Returns an error if automatic animation conversion exceeds limits or cannot read, encode, or persist the clipboard file.
     pub fn prepare_copy(&self, mut asset: Asset, mode: CopyMode) -> Result<(Asset, bool)> {
         let file = match mode {
             CopyMode::Still => false,
@@ -272,119 +289,23 @@ impl MediaCache {
                 asset.animated || asset.original.extension().is_some_and(|e| e == "gif")
             }
         };
-        if matches!(mode, CopyMode::Auto) && asset.original.extension().is_some_and(|e| e == "mp4")
-        {
-            let bytes = std::fs::read(&asset.original)?;
-            let path = asset.original.with_file_name(format!(
-                "animation-{}.gif",
-                hex::encode(Sha256::digest(&bytes))
-            ));
-            let _guard = self
-                .disk
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Cache lock unavailable"))?;
-            let valid = std::fs::read(&path).is_ok_and(|b| {
-                decode(&b).is_ok_and(|d| d.format == MediaFormat::Image(ImageFormat::Gif))
-            });
-            if !valid {
-                let frames = video::decode(&bytes)?;
-                let mut encoded = Vec::new();
-                {
-                    let mut encoder = image::codecs::gif::GifEncoder::new(&mut encoded);
-                    encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
-                    let mut elapsed = 0u64;
-                    let mut written_ticks = 0u64;
-                    for frame in frames {
-                        elapsed += frame.millis;
-                        let ticks = (elapsed + 5) / 10;
-                        let delay = ticks.saturating_sub(written_ticks).max(1) * 10;
-                        written_ticks += delay / 10;
-                        encoder.encode_frame(image::Frame::from_parts(
-                            image::RgbaImage::from_raw(frame.width, frame.height, frame.rgba)
-                                .context("Invalid video frame dimensions")?,
-                            0,
-                            0,
-                            image::Delay::from_numer_denom_ms(delay as u32, 1),
-                        ))?;
-                    }
-                }
-                ensure!(
-                    encoded.len() <= super::providers::MAX_DOWNLOAD,
-                    "Converted animation is too large"
-                );
-                let mut output = tempfile::NamedTempFile::new_in(
-                    path.parent().context("Missing cache directory")?,
-                )?;
-                std::io::Write::write_all(&mut output, &encoded)?;
-                output
-                    .persist(&path)
-                    .context("Cannot save animated clipboard file")?;
+        if matches!(mode, CopyMode::Auto) {
+            let format = match asset.original.extension().and_then(|e| e.to_str()) {
+                Some("mp4") => Some(conversion::Source::Video),
+                Some("png") if asset.animated => Some(conversion::Source::Apng),
+                _ => None,
+            };
+            if let Some(format) = format {
+                asset.original = self.clipboard_gif(&asset.original, format)?;
             }
-            asset.original = path;
-        }
-        if matches!(mode, CopyMode::Auto)
-            && asset.animated
-            && asset.original.extension().is_some_and(|e| e == "png")
-        {
-            let bytes = std::fs::read(&asset.original)?;
-            let path = asset.original.with_file_name(format!(
-                "animation-{}.gif",
-                hex::encode(Sha256::digest(&bytes))
-            ));
-            let _guard = self
-                .disk
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Cache lock unavailable"))?;
-            let valid = std::fs::metadata(&path)
-                .is_ok_and(|m| m.len() <= super::providers::MAX_DOWNLOAD as u64)
-                && std::fs::read(&path).is_ok_and(|bytes| {
-                    decode(&bytes).is_ok_and(|d| d.format == MediaFormat::Image(ImageFormat::Gif))
-                });
-            if !valid {
-                let mut decoder = image::codecs::png::PngDecoder::new(Cursor::new(bytes))?;
-                decoder.set_limits(limits())?;
-                let decoder = decoder.apng()?;
-                let repeat = match decoder.loop_count() {
-                    image::metadata::LoopCount::Infinite => image::codecs::gif::Repeat::Infinite,
-                    image::metadata::LoopCount::Finite(n) => {
-                        image::codecs::gif::Repeat::Finite(n.get().try_into().context(
-                            "Animation repeat count is too large; use Paste original file",
-                        )?)
-                    }
-                };
-                let mut encoded = Vec::new();
-                {
-                    let mut encoder = image::codecs::gif::GifEncoder::new(&mut encoded);
-                    encoder.set_repeat(repeat)?;
-                    let mut total = 0usize;
-                    for (index, frame) in decoder.into_frames().enumerate() {
-                        let frame = frame?;
-                        total += frame.buffer().len();
-                        ensure!(
-                            index < 2000 && total <= 64 * 1024 * 1024,
-                            "Animation is too large to convert; use Paste original file"
-                        );
-                        encoder.encode_frame(frame)?;
-                    }
-                }
-                ensure!(
-                    encoded.len() <= super::providers::MAX_DOWNLOAD,
-                    "Converted animation is too large; use Paste original file"
-                );
-                let mut file = tempfile::NamedTempFile::new_in(
-                    path.parent().context("Missing cache directory")?,
-                )?;
-                std::io::Write::write_all(&mut file, &encoded)?;
-                file.persist(&path)
-                    .context("Cannot save animated clipboard file")?;
-            }
-            asset.original = path;
         }
         Ok((asset, file))
     }
 }
 
 /// UI previews use bounded texture dimensions; original clipboard assets remain untouched.
+/// # Errors
+/// Rejects media that cannot be decoded within the size and memory limits.
 pub fn preview(bytes: &[u8]) -> Result<Decoded> {
     let mut decoded = decode(bytes)?;
     for frame in &mut decoded.frames {
@@ -407,6 +328,8 @@ pub fn preview(bytes: &[u8]) -> Result<Decoded> {
 }
 
 /// Idle thumbnails never decode the original animation. Hover previews do.
+/// # Errors
+/// Returns an error if the selected cache file cannot be read or decoded.
 pub fn preview_asset(asset: &Asset, animate: bool) -> Result<Decoded> {
     preview(&std::fs::read(if animate {
         &asset.original

@@ -1,17 +1,59 @@
-use super::*;
+use super::{App, Duration, Event, Instant, LibrarySticker, Result, Shortcut, Visual, egui};
+#[cfg(target_os = "macos")]
+use super::{Tab, focus, platform};
 impl App {
-    pub(super) fn handle_events(&mut self, ctx: &egui::Context) {
-        if let Some(p) = &mut self.pending
-            && p.from_picker
-            && !ctx.input(|i| i.viewport().focused.unwrap_or(false))
-        {
-            p.flow.cancel_auto();
+    fn copy_completed(&mut self, ctx: &egui::Context, result: Result<LibrarySticker>) {
+        let item = match result {
+            Ok(item) => item,
+            Err(error) => {
+                self.pending = None;
+                self.message(format!("Could not copy: {error:#}"), true);
+                return;
+            }
+        };
+        let recent = self
+            .store
+            .is_sticker_favorite(&item.pack_key, &item.sticker.id)
+            .and_then(|saved| {
+                if saved.is_some() {
+                    self.store.record_recent(&item.pack_key, &item.sticker.id)
+                } else {
+                    Ok(())
+                }
+            });
+        if let Some(pending) = self.pending.take() {
+            let current = pending.interaction.valid();
+            if pending.from_picker && current {
+                self.set_picker_hidden(ctx);
+            }
+            if pending.auto_paste
+                && current
+                && !ctx.input(|i| i.modifiers.any())
+                && let Some(target) = pending.target
+            {
+                self.paste_at = Some((
+                    Instant::now() + Duration::from_millis(180),
+                    target,
+                    pending.picker,
+                ));
+                ctx.request_repaint_after(Duration::from_millis(180));
+            } else {
+                self.message("Copied — paste with Ctrl+V / Cmd+V", false);
+            }
         }
+        if let Err(error) = recent {
+            self.message(
+                format!("Copied, but could not update Recent: {error:#}"),
+                true,
+            );
+        }
+    }
+    fn handle_activation(&mut self, ctx: &egui::Context) {
         while let Ok(library) = self.activation.try_recv() {
             if library {
-                self.open_library()
+                self.open_library();
             } else {
-                self.show_picker(ctx)
+                self.show_picker(ctx);
             }
         }
         if self.shortcut.as_ref().is_some_and(Shortcut::triggered) {
@@ -29,10 +71,22 @@ impl App {
                 _ => {}
             }
         }
+    }
+    pub(super) fn handle_events(&mut self, ctx: &egui::Context) {
+        if let Some(p) = &mut self.pending
+            && p.from_picker
+            && !ctx.input(|i| i.viewport().focused.unwrap_or(false))
+        {
+            p.auto_paste = false;
+        }
+        self.handle_activation(ctx);
         while let Ok(event) = self.rx.try_recv() {
             match event {
                 Event::UpdateHealthFailed(error) => { self.message(error, true); self.quit = true; },
+                #[cfg(target_os = "linux")]
                 Event::Show => self.show_picker(ctx),
+                #[cfg(target_os = "linux")]
+                Event::ShortcutRegistered(id, requested, persist, result) => self.shortcut_registered(id, requested, persist, result),
                 Event::Progress(s) => self.message(s, false),
                 Event::Catalog(id, result) => {
                     if id == self.catalog_id {
@@ -54,8 +108,8 @@ impl App {
                         Err(e) => self.message(format!("{e:#}"), true),
                     }
                 }
-                Event::Installed(result) => {
-                    self.installing = false;
+                Event::PackDownloaded(result) => {
+                    self.downloading_pack = false;
                     match result {
                         // The favorite was committed before downloading. Do not
                         // overwrite an unfavorite/removal made during the download.
@@ -76,25 +130,12 @@ impl App {
                                 frames.push(ctx.load_texture(format!("{url}:{i}"), color, egui::TextureOptions::LINEAR));
                                 delays.push(f.millis);
                             }
-                            self.cache_visual(url, Visual { frames, delays, bytes, animation_loaded: animate || !asset.animated, last_used: ctx.cumulative_frame_nr() }, 128 * 1024 * 1024);
+                            self.cache_visual(&url, Visual { frames, delays, bytes, animation_loaded: animate || !asset.animated, last_used: ctx.cumulative_frame_nr() }, 128 * 1024 * 1024);
                         }
-                        Err(e) => { self.failed.insert(url, e.to_string()); }
+                        Err(e) => { self.failed.insert(url, format!("{e:#}")); }
                     }
                 }
-                Event::Copied(result) => match result {
-                    Ok(item) => {
-                        let _ = self.store.record_recent(&item.pack_key, &item.sticker.id);
-                        if let Some(mut pending) = self.pending.take()
-                            && pending.flow.copied().is_ok() {
-                            if !pending.interaction.valid() || ctx.input(|i| i.modifiers.any()) { pending.flow.cancel_auto(); }
-                            if pending.from_picker && pending.interaction.valid() { self.hide_picker(ctx); }
-                            if matches!(pending.flow.hidden(), Ok(Action::Paste)) {
-                                if let Some(target) = pending.target { self.paste_at = Some((Instant::now() + Duration::from_millis(180), target, pending.picker)); }
-                            } else { self.message("Copied — paste with Ctrl+V / Cmd+V", false); }
-                        }
-                    }
-                    Err(e) => { self.pending = None; self.message(format!("Could not copy: {e:#}"), true); }
-                },
+                Event::Copied(result) => self.copy_completed(ctx, result),
                 #[cfg(target_os = "macos")]
                 Event::NativePaste(target, ticket) => {
                     self.services.bus.send(Event::Pasted(focus::send_paste(target, ticket)));
@@ -118,39 +159,32 @@ impl App {
                 }
                 #[cfg(target_os = "linux")]
                 Event::Wayland(result) => match result {
-                    Ok((w, warning)) => {
-                        *self.services.wayland.lock().unwrap() = Some(w);
+                    Ok(warning) => {
                         self.message(warning.unwrap_or_else(|| "Wayland keyboard access enabled".into()), false);
                     }
                     Err(e) => self.message(format!("Wayland input unavailable: {e:#}. Stickers can still be copied when a clipboard backend is available."), true),
                 },
             }
         }
-        if self
-            .paste_at
-            .as_ref()
-            .is_some_and(|(at, _, _)| Instant::now() >= *at)
+        if let Some((_, target, picker)) = self.paste_at.take_if(|(at, _, _)| Instant::now() >= *at)
         {
-            let (_, target, picker) = self.paste_at.take().unwrap();
             self.services.paste(target, picker);
         }
     }
 }
 
 impl App {
-    pub(super) fn cache_visual(&mut self, url: String, visual: Visual, budget: usize) {
-        self.visuals.insert(url.clone(), visual);
+    pub(super) fn cache_visual(&mut self, url: &str, visual: Visual, budget: usize) {
+        self.visuals.insert(url.to_owned(), visual);
         while self.visuals.values().map(|v| v.bytes).sum::<usize>() > budget {
             // Shed cold animation frames first. Keep every loaded first frame so
             // ordinary redraws never turn an animated thumbnail into a loader.
             let animation = self
                 .visuals
-                .iter()
+                .iter_mut()
                 .filter(|(_, v)| v.frames.len() > 1)
-                .min_by_key(|(key, v)| (*key == &url, v.last_used))
-                .map(|(key, _)| key.clone());
-            if let Some(key) = animation {
-                let v = self.visuals.get_mut(&key).unwrap();
+                .min_by_key(|(key, v)| (key.as_str() == url, v.last_used));
+            if let Some((_, v)) = animation {
                 v.frames.truncate(1);
                 v.delays.truncate(1);
                 let [width, height] = v.frames[0].size();
@@ -160,7 +194,7 @@ impl App {
                 let key = self
                     .visuals
                     .iter()
-                    .min_by_key(|(key, v)| (*key == &url, v.last_used))
+                    .min_by_key(|(key, v)| (key.as_str() == url, v.last_used))
                     .map(|(key, _)| key.clone());
                 if let Some(key) = key {
                     self.visuals.remove(&key);

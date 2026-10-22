@@ -27,6 +27,10 @@ enum Event {
     Staged(Result<(AvailableUpdate, tempfile::TempDir, StagedUpdate)>),
     Ready(Result<ReadyHelper>),
 }
+/// Update commands start background work; call [`Self::poll`] on UI updates to
+/// receive completion through [`Self::state`], including [`State::Error`]. Polling
+/// automatically hands a staged archive to the updater helper. Once handoff starts,
+/// cancellation is disabled so the installation cannot be interrupted halfway.
 pub struct Controller {
     pub state: State,
     pub previous_failure: Option<String>,
@@ -51,12 +55,14 @@ impl Default for Controller {
     }
 }
 impl Controller {
+    #[must_use]
     pub fn busy(&self) -> bool {
         matches!(
             self.state,
             State::Checking | State::Downloading(..) | State::HandingOff
         )
     }
+    /// Starts a check unless another operation is busy; results arrive through `poll`.
     pub fn check(&mut self, runtime: &tokio::runtime::Handle, ctx: &egui::Context) {
         if self.busy() {
             return;
@@ -80,6 +86,7 @@ impl Controller {
             ctx.request_repaint();
         }));
     }
+    /// Starts a download only from `Available`; all other states ignore the request.
     pub fn download(&mut self, runtime: &tokio::runtime::Handle, ctx: &egui::Context) {
         let State::Available(update) = &self.state else {
             return;
@@ -118,6 +125,7 @@ impl Controller {
             ctx.request_repaint();
         }));
     }
+    /// Aborts work and invalidates queued events, returning to `Idle`. Ignored during handoff.
     pub fn cancel(&mut self) {
         if matches!(self.state, State::HandingOff) {
             return;
@@ -150,6 +158,8 @@ impl Controller {
         }));
     }
     /// Returns true only after a helper is ready for this process to exit.
+    /// Applies current-generation events and starts staged handoff. Returns true when
+    /// the helper is ready and the caller must exit to release the running installation.
     pub fn poll(&mut self, runtime: &tokio::runtime::Handle, ctx: &egui::Context) -> bool {
         while let Ok((id, event)) = self.rx.try_recv() {
             if id != self.generation {
@@ -195,5 +205,101 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         assert!(!c.poll(rt.handle(), &egui::Context::default()));
         assert!(matches!(c.state, State::Idle));
+    }
+    fn update() -> AvailableUpdate {
+        AvailableUpdate {
+            version: "99.0.0".into(),
+            notes: String::new(),
+            asset: super::super::release::ReleaseAsset {
+                target: Target::current().unwrap(),
+                name: "offline-test.zip".into(),
+                size: 100,
+                sha256: "0".repeat(64),
+            },
+            url: "https://invalid.example/offline-test.zip".into(),
+        }
+    }
+
+    fn staged() -> Event {
+        let dir = tempfile::tempdir().unwrap();
+        let staged = StagedUpdate {
+            root: dir.path().join("staged"),
+            files: vec!["picora".into()],
+            target: Target::current().unwrap(),
+        };
+        Event::Staged(Ok((update(), dir, staged)))
+    }
+
+    #[test]
+    fn commands_and_completions_follow_update_lifecycle() {
+        // Spawned network/helper tasks cannot execute unless this runtime is driven.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut c = Controller::default();
+        c.download(rt.handle(), &ctx);
+        assert!(matches!(c.state, State::Idle));
+        assert!(c.task.is_none());
+        c.check(rt.handle(), &ctx);
+        let id = c.generation;
+        assert!(c.busy());
+        c.check(rt.handle(), &ctx);
+        c.download(rt.handle(), &ctx);
+        assert_eq!(c.generation, id);
+        c.tx.send((id, Event::Checked(Ok(None)))).unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::Current));
+        c.check(rt.handle(), &ctx);
+        c.tx.send((c.generation, Event::Checked(Ok(Some(update())))))
+            .unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::Available(_)));
+        c.download(rt.handle(), &ctx);
+        assert!(matches!(c.state, State::Downloading(0, 100)));
+        c.tx.send((c.generation, Event::Progress(50, 100))).unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::Downloading(50, 100)));
+        c.tx.send((c.generation, staged())).unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::HandingOff));
+        let id = c.generation;
+        c.cancel();
+        c.check(rt.handle(), &ctx);
+        c.download(rt.handle(), &ctx);
+        assert_eq!(c.generation, id);
+        assert!(matches!(c.state, State::HandingOff));
+        c.tx.send((id, Event::Ready(Err(anyhow::anyhow!("helper rejected")))))
+            .unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(&c.state, State::Error(message) if message == "helper rejected"));
+        c.cancel();
+        assert!(matches!(c.state, State::Idle));
+    }
+
+    #[test]
+    fn stale_staging_cannot_handoff_and_current_failures_are_visible() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut c = Controller::default();
+        c.state = State::Available(update());
+        c.download(rt.handle(), &ctx);
+        let id = c.generation;
+        c.cancel();
+        c.tx.send((id, Event::Progress(100, 100))).unwrap();
+        c.tx.send((id, staged())).unwrap();
+        assert!(!c.poll(rt.handle(), &ctx));
+        assert!(matches!(c.state, State::Idle));
+        assert!(c.task.is_none());
+        for event in [
+            Event::Checked(Err(anyhow::anyhow!("check failed"))),
+            Event::Staged(Err(anyhow::anyhow!("staging failed"))),
+        ] {
+            c.tx.send((c.generation, event)).unwrap();
+            assert!(!c.poll(rt.handle(), &ctx));
+            assert!(matches!(&c.state, State::Error(message) if message.ends_with("failed")));
+        }
     }
 }

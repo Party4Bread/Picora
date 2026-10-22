@@ -1,10 +1,13 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 use anyhow::{Context, Result};
 use std::sync::mpsc;
-fn main() {
-    if let Err(error) = run() {
-        eprintln!("Picora: {error:#}");
-        std::process::exit(1);
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Picora: {error:#}");
+            std::process::ExitCode::FAILURE
+        }
     }
 }
 fn starts_hidden(args: &[String]) -> bool {

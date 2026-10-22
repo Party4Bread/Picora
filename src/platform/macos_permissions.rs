@@ -34,6 +34,7 @@ pub fn request_accessibility() -> bool {
         core_foundation::string::CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt)
     };
     let options = CFDictionary::from_CFType_pairs(&[(key, CFBoolean::true_value())]);
+    // SAFETY: options owns a valid CFDictionary through this synchronous call.
     // The OS prompt is asynchronous. Its immediate return is not approval.
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) }
 }

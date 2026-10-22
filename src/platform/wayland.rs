@@ -26,12 +26,18 @@ pub struct Wayland {
     tx: mpsc::Sender<Command>,
 }
 impl Wayland {
+    /// # Errors
+    /// Returns an error if the portal cannot create or start an authorized remote-desktop session.
     pub async fn connect(restore_token: Option<&str>) -> Result<(Self, Option<String>)> {
         let remote = RemoteDesktop::new()
             .await
             .context("Desktop does not offer the Remote Desktop portal")?;
         let session = remote.create_session().await?;
         let setup = async {
+            let closed = session
+                .receive_closed()
+                .await
+                .context("Cannot monitor Wayland session closure")?;
             remote
                 .select_devices(
                     &session,
@@ -41,25 +47,26 @@ impl Wayland {
                 )
                 .await?
                 .response()?;
-            let clipboard = Clipboard::new().await.ok();
-            let clipboard = if let Some(c) = clipboard {
-                if c.request(&session).await.is_ok() {
-                    Some(c)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let clipboard = async {
+                let clipboard = Clipboard::new()
+                    .await
+                    .context("Cannot initialize clipboard portal")?;
+                clipboard
+                    .request(&session)
+                    .await
+                    .context("Clipboard portal access was not granted")?;
+                Ok::<_, anyhow::Error>(clipboard)
+            }
+            .await;
             let selected = remote.start(&session, None).await?.response()?;
             ensure!(
                 selected.devices().contains(DeviceType::Keyboard),
                 "Keyboard permission was not granted"
             );
-            Ok::<_, anyhow::Error>((clipboard, selected))
+            Ok::<_, anyhow::Error>((clipboard, selected, closed))
         }
         .await;
-        let (clipboard, selected) = match setup {
+        let (clipboard, selected, closed) = match setup {
             Ok(result) => result,
             Err(e) => {
                 let _ = session.close().await;
@@ -70,14 +77,15 @@ impl Wayland {
         let (tx, mut rx) = mpsc::channel::<Command>(8);
         tokio::spawn(async move {
             let mut contents: Option<(String, Vec<u8>)> = None;
-            let mut transfers = if let Some(c) = &clipboard {
-                c.receive_selection_transfer().await.ok().map(Box::pin)
-            } else {
-                None
-            };
-            let Ok(closed) = session.receive_closed().await else {
-                let _ = session.close().await;
-                return;
+            let (mut transfers, transfer_error) = match &clipboard {
+                Ok(c) => match c.receive_selection_transfer().await {
+                    Ok(stream) => (Some(Box::pin(stream)), None),
+                    Err(error) => (
+                        None,
+                        Some(format!("Clipboard transfer listener unavailable: {error}")),
+                    ),
+                },
+                Err(error) => (None, Some(format!("{error:#}"))),
             };
             tokio::pin!(closed);
             loop {
@@ -86,8 +94,9 @@ impl Wayland {
                     cmd=rx.recv()=>match cmd {
                         Some(Command::Copy{asset,original,result})=>{
                             let response=async {
-                                let c=clipboard.as_ref().context("Clipboard portal unavailable; trying the desktop clipboard")?;
-                                let (mime,data)=if original {let url=url::Url::from_file_path(&asset.original).map_err(|_|anyhow::anyhow!("Invalid sticker file path"))?;("text/uri-list",format!("{url}\r\n").into_bytes())}else{("image/png",tokio::fs::read(&asset.still).await?)};
+                                ensure_clipboard_ready(transfer_error.as_deref())?;
+                                let c=clipboard.as_ref().map_err(|error|anyhow::anyhow!("{error:#}"))?;
+                                let (mime,data)=if original {let url=url::Url::from_file_path(&asset.original).map_err(|()|anyhow::anyhow!("Invalid sticker file path"))?;("text/uri-list",format!("{url}\r\n").into_bytes())}else{("image/png",tokio::fs::read(&asset.still).await?)};
                                 c.set_selection(&session,&[mime]).await?;contents=Some((mime.into(),data));Ok(())
                             }.await;let _=result.send(response);
                         }
@@ -103,11 +112,17 @@ impl Wayland {
                         None=>break,
                     },
                     transfer=async {match transfers.as_mut(){Some(s)=>s.next().await,None=>std::future::pending().await}}=>{
-                        if let (Some((_,mime,serial)),Some(c))=(transfer,&clipboard) {
+                        if let (Some((_,mime,serial)),Ok(c))=(transfer,&clipboard) {
                             let response=async {let (_,data)=contents.as_ref().filter(|(m,_)|*m==mime).context("Clipboard format not offered")?;
                                 let fd=c.selection_write(&session,serial).await?;
                                 let fd:std::os::fd::OwnedFd=fd.into();let file:std::fs::File=fd.into();let mut file=tokio::fs::File::from_std(file);file.write_all(data).await?;file.flush().await?;Ok::<_,anyhow::Error>(())}.await;
-                            let _=c.selection_write_done(&session,serial,response.is_ok()).await;
+                            let delivered = response.is_ok();
+                            if let Err(error) = response {
+                                eprintln!("Picora: Wayland clipboard transfer {serial} ({mime}) failed: {error:#}");
+                            }
+                            if let Err(error) = c.selection_write_done(&session, serial, delivered).await {
+                                eprintln!("Picora: Cannot acknowledge Wayland clipboard transfer {serial} ({mime}): {error:#}");
+                            }
                         }else{break;}
                     }
                 }
@@ -116,6 +131,8 @@ impl Wayland {
         });
         Ok((Self { tx }, restore_token))
     }
+    /// # Errors
+    /// Returns an error if clipboard transfers are unavailable, the asset cannot be read, or the portal worker cannot claim selection.
     pub async fn copy(&self, asset: Asset, original: bool) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.tx
@@ -128,6 +145,8 @@ impl Wayland {
             .context("Wayland session closed; reconnect in Settings")?;
         rx.await?
     }
+    /// # Errors
+    /// Returns an error if the worker has stopped, the ticket was cancelled, or the portal rejects keyboard input.
     pub async fn paste(&self, ticket: crate::platform::paste::Ticket) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.tx
@@ -137,7 +156,13 @@ impl Wayland {
         rx.await?
     }
 }
-pub async fn shortcuts(trigger: String, activate: impl Fn() + Send + 'static) -> Result<()> {
+/// # Errors
+/// Returns an error if the portal cannot create, bind, or monitor the global-shortcut session.
+pub async fn shortcuts(
+    trigger: String,
+    ready: impl FnOnce() + Send + 'static,
+    activate: impl Fn() + Send + 'static,
+) -> Result<()> {
     let proxy = GlobalShortcuts::new()
         .await
         .context("No shortcut portal; bind `picora --show` in desktop settings")?;
@@ -153,10 +178,28 @@ pub async fn shortcuts(trigger: String, activate: impl Fn() + Send + 'static) ->
         !bound.shortcuts().is_empty(),
         "No shortcut was granted; use picora --show"
     );
+    ready();
     while let Some(event) = events.next().await {
         if event.shortcut_id() == "show-picker" {
             activate();
         }
     }
     Ok(())
+}
+
+fn ensure_clipboard_ready(error: Option<&str>) -> Result<()> {
+    match error {
+        Some(error) => anyhow::bail!("{error}; trying the desktop clipboard"),
+        None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn missing_transfer_listener_cannot_report_copy_success() {
+        assert!(super::ensure_clipboard_ready(None).is_ok());
+        let error = super::ensure_clipboard_ready(Some("listener setup failed")).unwrap_err();
+        assert!(error.to_string().contains("listener setup failed"));
+    }
 }

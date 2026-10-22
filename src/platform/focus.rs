@@ -1,13 +1,17 @@
 use anyhow::{Result, bail};
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+/// Native recipient identity. Wayland uses `Target(0)` as a sentinel because
+/// this API cannot inspect or control individual Wayland windows.
 #[derive(Debug, Clone, Copy)]
 pub struct Target(pub u64);
+#[must_use]
 pub fn capture() -> Option<Target> {
     if super::is_wayland() {
         return Some(Target(0));
     }
     #[cfg(target_os = "windows")]
     {
+        // SAFETY: parameterless query; the returned HWND is borrowed and never dereferenced.
         let hwnd = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
         if !hwnd.is_null() {
             return Some(Target(hwnd as u64));
@@ -24,7 +28,7 @@ pub fn capture() -> Option<Target> {
         let (conn, _) = x11rb::connect(None).ok()?;
         let focus = conn.get_input_focus().ok()?.reply().ok()?.focus;
         if focus > 1 {
-            return Some(Target(focus as u64));
+            return Some(Target(u64::from(focus)));
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -32,12 +36,15 @@ pub fn capture() -> Option<Target> {
         None
     }
 }
-/// Capture the recipient, excluding Picora's own library and picker windows.
+/// Capture the recipient, excluding Picora's windows on Windows, macOS, and X11.
+/// On Wayland, returns the sentinel without identifying or excluding any window.
+#[must_use]
 pub fn capture_external() -> Option<Target> {
     let target = capture()?;
     #[cfg(target_os = "windows")]
     {
         let mut pid = 0;
+        // SAFETY: pid is writable for the call; Windows validates the opaque HWND.
         unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(
                 target.0 as *mut _,
@@ -62,7 +69,7 @@ pub fn capture_external() -> Option<Target> {
             .reply()
             .ok()?
             .atom;
-        let mut window = target.0 as u32;
+        let mut window = u32::try_from(target.0).ok()?;
         for _ in 0..16 {
             let reply = conn
                 .get_property(false, window, atom, AtomEnum::CARDINAL, 0, 1)
@@ -81,9 +88,15 @@ pub fn capture_external() -> Option<Target> {
     }
     Some(target)
 }
+/// Restore the native recipient on Windows, macOS, or X11. Wayland is a successful
+/// no-op; the compositor controls focus after the picker closes.
+///
+/// # Errors
+/// Returns an error if native target lookup or focus restoration fails.
 pub fn restore(target: Target) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
+        // SAFETY: the opaque HWND is passed back to Windows, which rejects invalid handles.
         let ok = unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(target.0 as *mut _)
         };
@@ -110,15 +123,22 @@ pub fn restore(target: Target) -> Result<()> {
             return Ok(());
         }
         let (conn, _) = x11rb::connect(None)?;
-        conn.set_input_focus(InputFocus::PARENT, target.0 as u32, x11rb::CURRENT_TIME)?
-            .check()?;
+        conn.set_input_focus(
+            InputFocus::PARENT,
+            u32::try_from(target.0)?,
+            x11rb::CURRENT_TIME,
+        )?
+        .check()?;
         conn.flush()?;
     }
     Ok(())
 }
+#[must_use]
 pub fn may_restore(current: Option<u64>, target: u64, picker: Option<u64>) -> bool {
     current.is_none() || current == Some(target) || current == picker
 }
+/// # Errors
+/// Returns an error if focus changes, the ticket is cancelled, input permission is missing, or keyboard injection fails. macOS requires the main thread.
 pub fn paste(target: Target, picker: Option<Target>, ticket: super::paste::Ticket) -> Result<()> {
     #[cfg(target_os = "macos")]
     anyhow::ensure!(
@@ -129,6 +149,8 @@ pub fn paste(target: Target, picker: Option<Target>, ticket: super::paste::Ticke
     send_paste(target, ticket)
 }
 
+/// # Errors
+/// Returns an error if the ticket is cancelled, another application has focus, or the target cannot be restored.
 pub fn prepare_paste(
     target: Target,
     picker: Option<Target>,
@@ -143,6 +165,8 @@ pub fn prepare_paste(
     Ok(())
 }
 
+/// # Errors
+/// Returns an error on cancellation, changed focus, missing input permission, or keyboard injection failure. macOS requires the main thread.
 pub fn send_paste(target: Target, ticket: super::paste::Ticket) -> Result<()> {
     #[cfg(target_os = "macos")]
     anyhow::ensure!(

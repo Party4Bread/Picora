@@ -1,9 +1,12 @@
-use super::*;
+use super::selector;
+use super::{Context, Pack, PackRef, Provider, Repository, Result, Url, allowed_url, ensure};
 use crate::model::Sticker;
-use scraper::{Html, Selector};
+use scraper::Html;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
+/// # Errors
+/// Returns an error on network failure, a sign-in challenge, or an unrecognized catalog response.
 pub async fn browse(repo: &Repository, query: &str, page: u32) -> Result<Vec<Pack>> {
     parse_catalog(&repo.text(catalog_url(query, page)?).await?)
 }
@@ -21,22 +24,25 @@ fn catalog_url(query: &str, page: u32) -> Result<Url> {
 fn check_access(html: &str) -> Result<()> {
     let doc = Html::parse_document(html);
     ensure!(
-        doc.select(
-            &Selector::parse("form[action*='/u/login'] input[type='password'], #challenge-form")
-                .unwrap()
-        )
+        doc.select(&selector(
+            "form[action*='/u/login'] input[type='password'], #challenge-form"
+        )?)
         .next()
         .is_none(),
         "arca.live session expired or requires website verification. Reconnect in Accounts."
     );
     Ok(())
 }
+/// # Errors
+/// Rejects sign-in challenges and pages without a recognizable catalog or explicit empty-result state.
 pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
     check_access(html)?;
     let doc = Html::parse_document(html);
+    let base = Url::parse("https://arca.live/")?;
+    let direct_media = selector(":scope > img, :scope > video")?;
     let mut found = HashSet::new();
     let mut packs = Vec::new();
-    for node in doc.select(&Selector::parse(".emoticon-list a[href]").unwrap()) {
+    for node in doc.select(&selector(".emoticon-list a[href]")?) {
         // Arca repeats a popular-pack ranking above every query and page.
         // Exclude it before deduplication: a ranked pack can also be a real match.
         if node
@@ -47,7 +53,7 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
             continue;
         }
         let href = node.value().attr("href").unwrap_or_default();
-        let Ok(url) = Url::parse("https://arca.live/").unwrap().join(href) else {
+        let Ok(url) = base.join(href) else {
             continue;
         };
         let Ok(reference) = PackRef::parse(url.as_str()) else {
@@ -59,17 +65,16 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
         // Rating badges are nested before the sticker image in live cards.
         // Select the card's direct media, not the first descendant image.
         let image = node
-            .select(&Selector::parse(".emoticon > img, .emoticon > video").unwrap())
+            .select(&selector(".emoticon > img, .emoticon > video")?)
             .next()
-            .or_else(|| {
-                node.select(&Selector::parse(":scope > img, :scope > video").unwrap())
-                    .next()
-            });
+            .or_else(|| node.select(&direct_media).next());
         let title = node
-            .select(&Selector::parse(".title, .name, .emoticon-title").unwrap())
+            .select(&selector(".title, .name, .emoticon-title")?)
             .next()
-            .map(|n| n.text().collect::<String>())
-            .unwrap_or_else(|| node.text().collect::<String>());
+            .map_or_else(
+                || node.text().collect::<String>(),
+                |n| n.text().collect::<String>(),
+            );
         let title = if title.trim().is_empty() {
             image
                 .and_then(|i| i.value().attr("alt"))
@@ -94,11 +99,11 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
     ensure!(
         !packs.is_empty()
             || doc
-                .select(&Selector::parse(".emoticon-list > .row:not(.rank-list)").unwrap())
+                .select(&selector(".emoticon-list > .row:not(.rank-list)")?)
                 .next()
                 .is_some()
             || (doc
-                .select(&Selector::parse(".emoticon-list, .emoticon-store").unwrap())
+                .select(&selector(".emoticon-list, .emoticon-store")?)
                 .next()
                 .is_some()
                 && (html.contains("검색 결과가 없습니다") || html.contains("검색 결과 없음"))),
@@ -111,15 +116,19 @@ fn asset_url(raw: &str) -> Result<String> {
     ensure!(allowed_url(&url), "Unsupported arca.live image host");
     Ok(url.into())
 }
+/// # Errors
+/// Returns an error if the pack cannot be fetched or its page cannot be parsed.
 pub async fn detail(repo: &Repository, r: &PackRef) -> Result<Pack> {
     parse_detail(&r.id, &repo.text(Url::parse(&r.url())?).await?)
 }
+/// # Errors
+/// Rejects invalid pack identifiers, access challenges, missing pack content, unsupported asset hosts, and packs with no readable stickers.
 pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
     check_access(html)?;
     let doc = Html::parse_document(html);
     let reference = PackRef::parse(&format!("https://arca.live/e/{id}"))?;
     let title = doc
-        .select(&Selector::parse("article .emoticon-header .emoticon-info .title").unwrap())
+        .select(&selector("article .emoticon-header .emoticon-info .title")?)
         .next()
         .map(|n| n.text().collect::<String>())
         .filter(|t| !t.trim().is_empty())
@@ -127,13 +136,13 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
     // The store navigation and recommendations also contain sticker thumbnails.
     // Only the selected pack's body is a source of clipboard assets.
     let body = doc
-        .select(&Selector::parse("article .article-body.emoticon-body").unwrap())
+        .select(&selector("article .article-body.emoticon-body")?)
         .next()
         .context("arca.live pack content missing; the website format may have changed")?;
     let mut stickers = Vec::new();
     let mut seen = HashSet::new();
-    for node in body.select(&Selector::parse("img.emoticon, video.emoticon").unwrap()) {
-        let source = node.select(&Selector::parse("source[src]").unwrap()).next();
+    for node in body.select(&selector("img.emoticon, video.emoticon")?) {
+        let source = node.select(&selector("source[src]")?).next();
         let Some(raw) = node
             .value()
             .attr("data-src")
@@ -146,11 +155,10 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
         if !seen.insert(url.clone()) {
             continue;
         }
-        let id = node
-            .value()
-            .attr("data-id")
-            .map(str::to_owned)
-            .unwrap_or_else(|| hex::encode(Sha256::digest(url.as_bytes()))[..24].into());
+        let id = node.value().attr("data-id").map_or_else(
+            || hex::encode(Sha256::digest(url.as_bytes()))[..24].into(),
+            str::to_owned,
+        );
         stickers.push(Sticker {
             id,
             label: node
@@ -184,11 +192,14 @@ mod tests {
         let url = catalog_url("  고양이 & 강아지+ #1  ", 2).unwrap();
         let pairs: std::collections::HashMap<_, _> = url.query_pairs().collect();
         assert_eq!(
-            pairs.get("keyword").map(|s| s.as_ref()),
+            pairs.get("keyword").map(std::convert::AsRef::as_ref),
             Some("고양이 & 강아지+ #1")
         );
-        assert_eq!(pairs.get("target").map(|s| s.as_ref()), Some("title"));
-        assert_eq!(pairs.get("p").map(|s| s.as_ref()), Some("2"));
+        assert_eq!(
+            pairs.get("target").map(std::convert::AsRef::as_ref),
+            Some("title")
+        );
+        assert_eq!(pairs.get("p").map(std::convert::AsRef::as_ref), Some("2"));
         assert_eq!(pairs.len(), 3);
         assert!(url.fragment().is_none());
     }

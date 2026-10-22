@@ -10,12 +10,14 @@ pub enum Provider {
     Arca,
 }
 impl Provider {
+    #[must_use]
     pub fn id(self) -> &'static str {
         match self {
             Self::Dcinside => "dcinside",
             Self::Arca => "arca",
         }
     }
+    #[must_use]
     pub fn origin(self) -> &'static str {
         match self {
             Self::Dcinside => "https://dccon.dcinside.com/",
@@ -37,15 +39,19 @@ pub struct PackRef {
     pub id: String,
 }
 impl PackRef {
+    #[must_use]
     pub fn key(&self) -> String {
         format!("{}:{}", self.provider.id(), self.id)
     }
+    #[must_use]
     pub fn url(&self) -> String {
         match self.provider {
             Provider::Dcinside => format!("https://dccon.dcinside.com/#{}", self.id),
             Provider::Arca => format!("https://arca.live/e/{}", self.id),
         }
     }
+    /// # Errors
+    /// Rejects URLs outside supported sticker repositories or without a valid pack identifier.
     pub fn parse(input: &str) -> Result<Self> {
         ensure!(
             !input.contains("..") && !input.to_lowercase().contains("%2e"),
@@ -119,7 +125,8 @@ pub struct Settings {
     pub shortcut: String,
     pub auto_paste: bool,
     pub launch_at_login: bool,
-    pub theme: String,
+    #[serde(with = "theme_setting")]
+    pub theme: eframe::egui::ThemePreference,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -128,7 +135,32 @@ impl Default for Settings {
             shortcut: "Ctrl+Shift+Space".into(),
             auto_paste: true,
             launch_at_login: false,
-            theme: "System".into(),
+            theme: eframe::egui::ThemePreference::System,
         }
+    }
+}
+
+mod theme_setting {
+    use eframe::egui::ThemePreference;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        theme: &ThemePreference,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(match theme {
+            ThemePreference::System => "System",
+            ThemePreference::Light => "Light",
+            ThemePreference::Dark => "Dark",
+        })
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<ThemePreference, D::Error> {
+        Ok(match String::deserialize(deserializer)?.as_str() {
+            "Light" => ThemePreference::Light,
+            "Dark" => ThemePreference::Dark,
+            _ => ThemePreference::System,
+        })
     }
 }

@@ -1,8 +1,4 @@
-use picora::{
-    auth,
-    model::Provider,
-    providers::{Repository, StickerProvider},
-};
+use picora::{auth, model::Provider, providers::Repository};
 #[tokio::test]
 #[ignore = "requires a saved Arca session and live repository access"]
 async fn saved_session_search_and_thumbnails() -> anyhow::Result<()> {

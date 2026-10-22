@@ -7,11 +7,10 @@ mod library;
 mod updates;
 use crate::{
     media::CopyMode,
-    model::*,
+    model::{Group, LibrarySticker, Pack, PackRef, Provider, SavedPack, Settings},
     platform::{
         self,
         focus::{self, Target},
-        paste::{Action, PasteFlow},
         shortcut::Shortcut,
     },
     services::{Bus, Event, Services},
@@ -34,6 +33,27 @@ enum Filter {
     Pack(String),
     Group(i64),
 }
+struct BrowseState {
+    filter: Filter,
+    search: String,
+    selected: usize,
+}
+impl BrowseState {
+    fn new(filter: Filter) -> Self {
+        Self {
+            filter,
+            search: String::new(),
+            selected: 0,
+        }
+    }
+}
+#[derive(Clone, Copy, PartialEq)]
+enum View {
+    Library,
+    Picker,
+    Group(i64),
+    Preview,
+}
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Library,
@@ -52,7 +72,7 @@ struct Visual {
 struct PendingPaste {
     interaction: platform::paste::Ticket,
     picker: Option<Target>,
-    flow: PasteFlow,
+    auto_paste: bool,
     target: Option<Target>,
     from_picker: bool,
 }
@@ -66,11 +86,9 @@ pub struct App {
     settings: Settings,
     packs: Vec<SavedPack>,
     groups: Vec<Group>,
-    filter: Filter,
-    picker_filter: Filter,
-    picker_search: String,
+    library_state: BrowseState,
+    picker_state: BrowseState,
     tab: Tab,
-    search: String,
     query: String,
     source: Provider,
     page: u32,
@@ -80,11 +98,10 @@ pub struct App {
     library_open: bool,
     picker_open: bool,
     focus_search: bool,
-    selected: usize,
     status: String,
     error: bool,
     browsing: bool,
-    installing: bool,
+    downloading_pack: bool,
     login_busy: bool,
     group_name: String,
     rename: String,
@@ -98,13 +115,16 @@ pub struct App {
     shortcut: Option<Shortcut>,
     shortcut_text: String,
     shortcut_status: String,
+    shortcut_generation: u64,
     #[cfg(target_os = "linux")]
     portal_task: Option<tokio::task::JoinHandle<()>>,
-    _tray: Option<tray_icon::TrayIcon>,
+    tray: Option<tray_icon::TrayIcon>,
     quit: bool,
     data_dir: PathBuf,
 }
 impl App {
+    /// # Errors
+    /// Returns an error if the library database, cache directory, or repository clients cannot initialize.
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         runtime: tokio::runtime::Handle,
@@ -131,7 +151,7 @@ impl App {
         ime::install(ctx);
         let store = Store::open(&root.join("library.sqlite3"))?;
         let settings = store.settings()?;
-        apply_theme(ctx, &settings.theme);
+        ctx.set_theme(settings.theme);
         let (tx, rx) = mpsc::channel();
         let bus = Bus {
             tx,
@@ -143,7 +163,7 @@ impl App {
             bus,
         )?;
         let mut app = Self {
-            updates: Default::default(),
+            updates: crate::update::controller::Controller::default(),
             update_health_sent: false,
             packs: store.packs()?,
             groups: store.groups()?,
@@ -153,11 +173,9 @@ impl App {
             activation,
             shortcut_text: settings.shortcut.clone(),
             settings,
-            filter: Filter::All,
-            picker_filter: Filter::Favorites,
-            picker_search: String::new(),
+            library_state: BrowseState::new(Filter::All),
+            picker_state: BrowseState::new(Filter::Favorites),
             tab: Tab::Library,
-            search: String::new(),
             query: String::new(),
             source: Provider::Dcinside,
             page: 1,
@@ -167,11 +185,10 @@ impl App {
             library_open: library,
             picker_open: !background && !library,
             focus_search: true,
-            selected: 0,
             status: "Choose a sticker to copy and paste".into(),
             error: false,
             browsing: false,
-            installing: false,
+            downloading_pack: false,
             login_busy: false,
             group_name: String::new(),
             rename: String::new(),
@@ -184,9 +201,10 @@ impl App {
             paste_at: None,
             shortcut: None,
             shortcut_status: String::new(),
+            shortcut_generation: 0,
             #[cfg(target_os = "linux")]
             portal_task: None,
-            _tray: None,
+            tray: None,
             quit: false,
             data_dir: root,
         };
@@ -197,13 +215,13 @@ impl App {
         if app.settings.check_updates_automatically {
             app.updates.check(&app.services.runtime, ctx);
         }
-        app.register_shortcut();
+        app.register_shortcut(false);
         #[cfg(target_os = "linux")]
         if platform::is_wayland() {
             app.services.enable_wayland(true);
         }
         match make_tray() {
-            Ok(tray) => app._tray = Some(tray),
+            Ok(tray) => app.tray = Some(tray),
             Err(e) => {
                 app.library_open = true;
                 app.message(
@@ -222,52 +240,95 @@ impl App {
         match (self.store.packs(), self.store.groups()) {
             (Ok(p), Ok(g)) => {
                 self.packs = p;
-                self.groups = g
+                self.groups = g;
             }
-            (Err(e), _) | (_, Err(e)) => self.message(e.to_string(), true),
+            (Err(e), _) | (_, Err(e)) => self.message(format!("{e:#}"), true),
         }
     }
-    fn register_shortcut(&mut self) {
-        if platform::is_wayland() {
-            #[cfg(target_os = "linux")]
-            {
-                if let Some(task) = self.portal_task.take() {
-                    task.abort();
-                }
-                let bus = self.services.bus.clone();
-                let trigger = self
-                    .shortcut_text
-                    .replace("Ctrl", "CTRL")
-                    .replace("Shift", "SHIFT")
-                    .replace("Space", "space");
-                self.portal_task = Some(self.services.runtime.spawn(async move {
-                    let activate = bus.clone();
-                    if let Err(e) =
-                        platform::wayland::shortcuts(trigger, move || activate.send(Event::Show))
-                            .await
-                    {
-                        bus.send(Event::Progress(format!("Shortcut: {e}")));
-                    }
-                }));
-                self.shortcut_status =
-                    "Desktop shortcut permission requested. Use picora --show if unavailable."
-                        .into();
-            }
+    fn register_native_shortcut(&mut self) -> Result<()> {
+        if let Some(shortcut) = &mut self.shortcut {
+            shortcut.replace(&self.shortcut_text)
         } else {
-            let result = if let Some(s) = &mut self.shortcut {
-                s.replace(&self.shortcut_text)
-            } else {
-                Shortcut::new(&self.shortcut_text).map(|s| self.shortcut = Some(s))
-            };
-            self.shortcut_status = match result {
-                Ok(()) => format!("Active: {}", self.shortcut_text),
-                Err(e) => format!("{e:#}"),
-            };
+            self.shortcut = Some(Shortcut::new(&self.shortcut_text)?);
+            Ok(())
+        }
+    }
+    fn register_shortcut(&mut self, persist: bool) {
+        self.shortcut_generation += 1;
+        let id = self.shortcut_generation;
+        let requested = self.shortcut_text.clone();
+        #[cfg(target_os = "linux")]
+        if platform::is_wayland() {
+            if let Some(task) = self.portal_task.take() {
+                task.abort();
+            }
+            let bus = self.services.bus.clone();
+            let trigger = requested
+                .replace("Ctrl", "CTRL")
+                .replace("Shift", "SHIFT")
+                .replace("Space", "space");
+            self.portal_task = Some(self.services.runtime.spawn(async move {
+                let activate = bus.clone();
+                let ready = bus.clone();
+                let ready_shortcut = requested.clone();
+                let result = platform::wayland::shortcuts(
+                    trigger,
+                    move || {
+                        ready.send(Event::ShortcutRegistered(
+                            id,
+                            ready_shortcut,
+                            persist,
+                            Ok(()),
+                        ));
+                    },
+                    move || activate.send(Event::Show),
+                )
+                .await;
+                let error = result.err().unwrap_or_else(|| {
+                    anyhow::anyhow!("Desktop shortcut session ended; reconnect in Settings")
+                });
+                bus.send(Event::ShortcutRegistered(id, requested, false, Err(error)));
+            }));
+            self.shortcut_status = "Waiting for desktop shortcut permission…".into();
+            return;
+        }
+        let result = self.register_native_shortcut();
+        self.shortcut_registered(id, requested, persist, result);
+    }
+    fn shortcut_registered(
+        &mut self,
+        id: u64,
+        requested: String,
+        persist: bool,
+        result: Result<()>,
+    ) {
+        if id != self.shortcut_generation {
+            return;
+        }
+        match result {
+            Ok(()) => {
+                self.shortcut_status = format!("Active: {requested}");
+                if persist {
+                    self.settings.shortcut = requested;
+                    let result = self.store.save_settings(&self.settings);
+                    self.report(result, "Shortcut saved");
+                }
+            }
+            Err(error) => {
+                self.shortcut_status = format!("{error:#}");
+                self.message(format!("Shortcut unavailable: {error:#}"), true);
+            }
+        }
+    }
+    fn cancel_auto_paste(&mut self) {
+        self.paste_at = None;
+        self.services.cancel_paste();
+        if let Some(pending) = &mut self.pending {
+            pending.auto_paste = false;
         }
     }
     fn show_picker(&mut self, ctx: &egui::Context) {
-        self.paste_at = None;
-        self.services.cancel_paste();
+        self.cancel_auto_paste();
         if self.picker_open {
             self.hide_picker(ctx);
             return;
@@ -284,16 +345,15 @@ impl App {
         };
         self.picker_open = true;
         self.focus_search = true;
-        self.selected = 0;
+        self.picker_state.selected = 0;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
     fn hide_picker(&mut self, ctx: &egui::Context) {
-        self.paste_at = None;
-        self.services.cancel_paste();
-        if let Some(p) = &mut self.pending {
-            p.flow.cancel_auto();
-        }
+        self.cancel_auto_paste();
+        self.set_picker_hidden(ctx);
+    }
+    fn set_picker_hidden(&mut self, ctx: &egui::Context) {
         self.picker_open = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
     }
@@ -302,11 +362,7 @@ impl App {
             egui::ViewportId::from_hash_of("library"),
             egui::ViewportCommand::Focus,
         );
-        self.paste_at = None;
-        self.services.cancel_paste();
-        if let Some(p) = &mut self.pending {
-            p.flow.cancel_auto();
-        }
+        self.cancel_auto_paste();
         self.library_open = true;
         self.target = None;
     }
@@ -324,8 +380,8 @@ impl App {
         self.services
             .browse(self.source, self.query.clone(), self.page, self.catalog_id);
     }
-    fn collection_title(&self) -> String {
-        match &self.filter {
+    fn collection_title(&self, filter: &Filter) -> String {
+        match filter {
             Filter::All => "All stickers".into(),
             Filter::Favorites => "Favorites".into(),
             Filter::Recent => "Recent".into(),
@@ -333,21 +389,19 @@ impl App {
                 .packs
                 .iter()
                 .find(|p| p.pack.reference.key() == *key)
-                .map(|p| p.pack.title.clone())
-                .unwrap_or_else(|| "All stickers".into()),
+                .map_or_else(|| "All stickers".into(), |p| p.pack.title.clone()),
             Filter::Group(id) => self
                 .groups
                 .iter()
                 .find(|g| g.id == *id)
-                .map(|g| g.name.clone())
-                .unwrap_or_else(|| "All stickers".into()),
+                .map_or_else(|| "All stickers".into(), |g| g.name.clone()),
         }
     }
-    fn items(&self) -> Vec<LibrarySticker> {
-        let items = match &self.filter {
-            Filter::Group(id) => self.store.group_items(*id).unwrap_or_default(),
-            Filter::Recent => self.store.recents().unwrap_or_default(),
-            Filter::Favorites => self.store.favorite_items().unwrap_or_default(),
+    fn items(&self, filter: &Filter, search: &str) -> Result<Vec<LibrarySticker>> {
+        let items = match filter {
+            Filter::Group(id) => self.store.group_items(*id)?,
+            Filter::Recent => self.store.recents()?,
+            Filter::Favorites => self.store.favorite_items()?,
             filter => self
                 .packs
                 .iter()
@@ -365,17 +419,34 @@ impl App {
                 })
                 .collect(),
         };
-        let query = self.search.trim().to_lowercase();
-        items
+        let query = search.trim().to_lowercase();
+        Ok(items
             .into_iter()
             .filter(|s| {
                 query.is_empty()
                     || s.sticker.label.to_lowercase().contains(&query)
                     || s.pack_title.to_lowercase().contains(&query)
             })
-            .collect()
+            .collect())
     }
-    fn choose(&mut self, item: LibrarySticker, mode: CopyMode, from_picker: bool) {
+    fn load_items(&mut self, ui: &mut egui::Ui, view: View) -> Option<Vec<LibrarySticker>> {
+        let result = match view {
+            View::Library => self.items(&self.library_state.filter, &self.library_state.search),
+            View::Picker => self.items(&self.picker_state.filter, &self.picker_state.search),
+            View::Group(id) => self.items(&Filter::Group(id), ""),
+            View::Preview => unreachable!("Previews supply their own stickers"),
+        };
+        match result {
+            Ok(items) => Some(items),
+            Err(error) => {
+                let message = format!("Could not load stickers: {error:#}");
+                ui.colored_label(ui.visuals().error_fg_color, &message);
+                self.message(message, true);
+                None
+            }
+        }
+    }
+    fn begin_sticker_copy(&mut self, item: LibrarySticker, mode: CopyMode, from_picker: bool) {
         if matches!(
             self.updates.state,
             crate::update::controller::State::HandingOff
@@ -388,7 +459,7 @@ impl App {
         self.pending = Some(PendingPaste {
             interaction: self.services.paste_ticket(),
             picker: focus::capture(),
-            flow: PasteFlow::new(self.settings.auto_paste, target.is_some()),
+            auto_paste: self.settings.auto_paste,
             target,
             from_picker,
         });
@@ -398,12 +469,12 @@ impl App {
     fn report(&mut self, result: Result<()>, success: &str) {
         match result {
             Ok(()) => self.message(success, false),
-            Err(e) => self.message(e.to_string(), true),
+            Err(e) => self.message(format!("{e:#}"), true),
         }
     }
     fn footer(&self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            if self.pending.is_some() || self.installing || self.browsing || self.login_busy {
+            if self.pending.is_some() || self.downloading_pack || self.browsing || self.login_busy {
                 ui.spinner();
             }
             ui.label(RichText::new(&self.status).size(12.).color(if self.error {
@@ -413,9 +484,98 @@ impl App {
             }));
         });
     }
+    fn picker_collections(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            for (label, filter) in [
+                ("Favorites", Filter::Favorites),
+                ("Recent", Filter::Recent),
+                ("All", Filter::All),
+            ] {
+                if ui
+                    .selectable_value(&mut self.picker_state.filter, filter, label)
+                    .changed()
+                {
+                    self.picker_state.selected = 0;
+                }
+            }
+            let collection_label = if ui.max_rect().width() < 380. {
+                "More"
+            } else {
+                "Packs & groups"
+            };
+            egui::ComboBox::from_id_salt("collections")
+                .width(if ui.max_rect().width() < 380. {
+                    68.
+                } else {
+                    140.
+                })
+                .selected_text(collection_label)
+                .show_ui(ui, |ui| {
+                    ui.label("Saved packs");
+                    for p in &self.packs {
+                        if ui
+                            .selectable_value(
+                                &mut self.picker_state.filter,
+                                Filter::Pack(p.pack.reference.key()),
+                                &p.pack.title,
+                            )
+                            .changed()
+                        {
+                            self.picker_state.selected = 0;
+                        }
+                    }
+                    if !self.groups.is_empty() {
+                        ui.separator();
+                        ui.label("Custom groups");
+                        for g in &self.groups {
+                            if ui
+                                .selectable_value(
+                                    &mut self.picker_state.filter,
+                                    Filter::Group(g.id),
+                                    &g.name,
+                                )
+                                .changed()
+                            {
+                                self.picker_state.selected = 0;
+                            }
+                        }
+                    }
+                });
+        });
+    }
+    fn picker_pack_shortcuts(&mut self, ui: &mut egui::Ui) {
+        if !self.packs.is_empty() {
+            egui::TopBottomPanel::bottom("picker-packs")
+                .exact_height(48.)
+                .show_separator_line(false)
+                .show_inside(ui, |ui| {
+                    egui::ScrollArea::horizontal()
+                        .id_salt("pack-shortcuts")
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                for p in self.packs.clone() {
+                                    ui.push_id(p.pack.reference.key(), |ui| {
+                                        let filter = Filter::Pack(p.pack.reference.key());
+                                        let thumbnail = self.thumb(
+                                            ui,
+                                            p.pack.reference.provider,
+                                            &p.pack.thumbnail,
+                                            38.,
+                                            self.picker_state.filter == filter,
+                                        );
+                                        thumbnail.response.on_hover_text(&p.pack.title);
+                                        if thumbnail.activated {
+                                            self.picker_state.filter = filter;
+                                            self.picker_state.selected = 0;
+                                        }
+                                    });
+                                }
+                            });
+                        });
+                });
+        }
+    }
     fn picker(&mut self, ctx: &egui::Context) {
-        std::mem::swap(&mut self.filter, &mut self.picker_filter);
-        std::mem::swap(&mut self.search, &mut self.picker_search);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -425,9 +585,9 @@ impl App {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     let title = if ctx.content_rect().height() < 400.
-                        && matches!(self.filter, Filter::Pack(_) | Filter::Group(_))
+                        && matches!(self.picker_state.filter, Filter::Pack(_) | Filter::Group(_))
                     {
-                        self.collection_title()
+                        self.collection_title(&self.picker_state.filter)
                     } else {
                         "Picora".to_owned()
                     };
@@ -459,7 +619,7 @@ impl App {
                 }
                 let search = ui.add_sized(
                     [ui.available_width(), 36.],
-                    egui::TextEdit::singleline(&mut self.search)
+                    egui::TextEdit::singleline(&mut self.picker_state.search)
                         .hint_text("Search stickers…")
                         .margin(egui::vec2(12., 8.))
                         .desired_width(f32::INFINITY),
@@ -473,103 +633,16 @@ impl App {
                 }) {
                     search.surrender_focus();
                 }
-                ui.horizontal_wrapped(|ui| {
-                    for (label, filter) in [
-                        ("Favorites", Filter::Favorites),
-                        ("Recent", Filter::Recent),
-                        ("All", Filter::All),
-                    ] {
-                        if ui
-                            .selectable_value(&mut self.filter, filter, label)
-                            .changed()
-                        {
-                            self.selected = 0;
-                        }
-                    }
-                    let collection_label = if ui.max_rect().width() < 380. {
-                        "More"
-                    } else {
-                        "Packs & groups"
-                    };
-                    egui::ComboBox::from_id_salt("collections")
-                        .width(if ui.max_rect().width() < 380. {
-                            68.
-                        } else {
-                            140.
-                        })
-                        .selected_text(collection_label)
-                        .show_ui(ui, |ui| {
-                            ui.label("Saved packs");
-                            for p in &self.packs {
-                                if ui
-                                    .selectable_value(
-                                        &mut self.filter,
-                                        Filter::Pack(p.pack.reference.key()),
-                                        &p.pack.title,
-                                    )
-                                    .changed()
-                                {
-                                    self.selected = 0;
-                                }
-                            }
-                            if !self.groups.is_empty() {
-                                ui.separator();
-                                ui.label("Custom groups");
-                                for g in &self.groups {
-                                    if ui
-                                        .selectable_value(
-                                            &mut self.filter,
-                                            Filter::Group(g.id),
-                                            &g.name,
-                                        )
-                                        .changed()
-                                    {
-                                        self.selected = 0;
-                                    }
-                                }
-                            }
-                        });
-                });
+                self.picker_collections(ui);
                 egui::TopBottomPanel::bottom("picker-status").show_inside(ui, |ui| self.footer(ui));
-                if !self.packs.is_empty() {
-                    egui::TopBottomPanel::bottom("picker-packs")
-                        .exact_height(48.)
-                        .show_separator_line(false)
-                        .show_inside(ui, |ui| {
-                            egui::ScrollArea::horizontal()
-                                .id_salt("pack-shortcuts")
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        for p in self.packs.clone() {
-                                            ui.push_id(p.pack.reference.key(), |ui| {
-                                                let filter = Filter::Pack(p.pack.reference.key());
-                                                if self
-                                                    .thumb(
-                                                        ui,
-                                                        p.pack.reference.provider,
-                                                        &p.pack.thumbnail,
-                                                        38.,
-                                                        self.filter == filter,
-                                                    )
-                                                    .on_hover_text(&p.pack.title)
-                                                    .clicked()
-                                                {
-                                                    self.filter = filter;
-                                                    self.selected = 0;
-                                                }
-                                            });
-                                        }
-                                    });
-                                });
-                        });
-                }
+                self.picker_pack_shortcuts(ui);
                 ui.add_space(4.);
-                let items = self.items();
+                let Some(items) = self.load_items(ui, View::Picker) else { return; };
                 if ctx.content_rect().height() >= 400. {
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::Label::new(
-                                RichText::new(self.collection_title()).small().strong(),
+                                RichText::new(self.collection_title(&self.picker_state.filter)).small().strong(),
                             )
                             .truncate(),
                         );
@@ -577,10 +650,8 @@ impl App {
                     });
                     ui.add_space(4.);
                 }
-                self.grid(ui, items, true);
+                self.grid(ui, &items, View::Picker);
             });
-        std::mem::swap(&mut self.filter, &mut self.picker_filter);
-        std::mem::swap(&mut self.search, &mut self.picker_search);
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.hide_picker(ctx);
         }
@@ -604,8 +675,7 @@ impl eframe::App for App {
             });
         }
         if self.updates.poll(&self.services.runtime, ctx) {
-            self.services.cancel_paste();
-            self.paste_at = None;
+            self.cancel_auto_paste();
             self.pending = None;
             self.quit = true;
         }
@@ -613,8 +683,7 @@ impl eframe::App for App {
             self.updates.state,
             crate::update::controller::State::HandingOff
         ) {
-            self.services.cancel_paste();
-            self.paste_at = None;
+            self.cancel_auto_paste();
             self.pending = None;
         }
         self.handle_events(ctx);
@@ -647,13 +716,6 @@ impl eframe::App for App {
         }
         ctx.request_repaint_after(Duration::from_millis(100));
     }
-}
-fn apply_theme(ctx: &egui::Context, theme: &str) {
-    ctx.set_theme(match theme {
-        "Light" => egui::ThemePreference::Light,
-        "Dark" => egui::ThemePreference::Dark,
-        _ => egui::ThemePreference::System,
-    });
 }
 fn make_tray() -> Result<tray_icon::TrayIcon> {
     use tray_icon::{

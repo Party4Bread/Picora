@@ -15,7 +15,7 @@ fn replace_rollback_and_commit_preserve_unrelated_files() {
         files: vec![PathBuf::from("picora")],
         target: Target::LinuxX86_64,
     };
-    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    let layout = InstallLayout::for_root(&root, Target::LinuxX86_64).unwrap();
     let mut tx = Transaction::prepare(&layout, &staged).unwrap();
     tx.apply().unwrap();
     assert_eq!(fs::read(root.join("picora")).unwrap(), b"new");
@@ -40,7 +40,7 @@ fn interrupted_replacement_is_recovered() {
     let stage = d.path().join("stage");
     fs::create_dir(&stage).unwrap();
     fs::write(stage.join("picora"), b"new").unwrap();
-    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    let layout = InstallLayout::for_root(&root, Target::LinuxX86_64).unwrap();
     let staged = StagedUpdate {
         root: stage,
         files: vec!["picora".into()],
@@ -62,7 +62,7 @@ fn existing_files_remain_present_when_preparing_backup() {
     let stage = d.path().join("stage");
     fs::create_dir(&stage).unwrap();
     fs::write(stage.join("picora"), b"new").unwrap();
-    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    let layout = InstallLayout::for_root(&root, Target::LinuxX86_64).unwrap();
     let staged = StagedUpdate {
         root: stage,
         files: vec!["picora".into()],
@@ -80,7 +80,7 @@ fn existing_files_remain_present_when_preparing_backup() {
 #[test]
 fn startup_gate_covers_preparation_before_a_journal_exists() {
     let d = tempfile::tempdir().unwrap();
-    let layout = InstallLayout::for_root(d.path().to_owned(), Target::LinuxX86_64).unwrap();
+    let layout = InstallLayout::for_root(d.path(), Target::LinuxX86_64).unwrap();
     let gate = layout.startup_gate().unwrap();
     assert!(!layout.state_dir().unwrap().join("journal.json").exists());
     assert!(layout.startup_gate().is_err());
@@ -103,7 +103,7 @@ fn partial_apply_failure_restores_earlier_files() {
         target: Target::LinuxX86_64,
         files: vec!["picora".into(), "blocked/file".into()],
     };
-    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    let layout = InstallLayout::for_root(&root, Target::LinuxX86_64).unwrap();
     let mut tx = Transaction::prepare(&layout, &staged).unwrap();
     assert!(tx.apply().is_err());
     tx.rollback().unwrap();
@@ -131,7 +131,7 @@ fn old_inventory_removes_only_obsolete_owned_files() {
         target: Target::LinuxX86_64,
         files: vec!["picora".into()],
     };
-    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    let layout = InstallLayout::for_root(&root, Target::LinuxX86_64).unwrap();
     let mut tx = Transaction::prepare(&layout, &staged).unwrap();
     tx.apply().unwrap();
     tx.commit().unwrap();
@@ -148,7 +148,7 @@ fn read_only_installation_is_rejected_before_handoff() {
     let d = tempfile::tempdir().unwrap();
     let root = d.path().join("app");
     fs::create_dir(&root).unwrap();
-    let layout = InstallLayout::for_root(root.clone(), Target::LinuxX86_64).unwrap();
+    let layout = InstallLayout::for_root(&root, Target::LinuxX86_64).unwrap();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o555)).unwrap();
     let result = layout.check_writable();
     fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();

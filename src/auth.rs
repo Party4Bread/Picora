@@ -5,6 +5,8 @@ const SERVICE: &str = "app.picora.desktop";
 const ACCOUNT: &str = "arca-session";
 #[cfg(target_os = "windows")]
 mod windows;
+/// # Errors
+/// Returns an error if credentials are missing, storage is unavailable, or the saved cookie jar is invalid.
 pub fn load() -> Result<Vec<String>> {
     #[cfg(target_os = "windows")]
     if let Some(cookies) = windows::load(&windows::path()?)? {
@@ -14,6 +16,8 @@ pub fn load() -> Result<Vec<String>> {
     let value = keyring::Entry::new(SERVICE, ACCOUNT)?.get_password()?;
     Ok(serde_json::from_str(&value)?)
 }
+/// # Errors
+/// Returns an error if serialization or OS-protected credential storage fails.
 pub fn save(cookies: &[String]) -> Result<()> {
     #[cfg(target_os = "windows")]
     return windows::save(&windows::path()?, cookies);
@@ -23,6 +27,8 @@ pub fn save(cookies: &[String]) -> Result<()> {
         Ok(())
     }
 }
+/// # Errors
+/// Returns an error if credential storage cannot be accessed or cleared; missing credentials are accepted.
 pub fn forget() -> Result<()> {
     let legacy = match keyring::Entry::new(SERVICE, ACCOUNT)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -32,6 +38,8 @@ pub fn forget() -> Result<()> {
     windows::forget(&windows::path()?)?;
     legacy
 }
+/// # Errors
+/// Returns an error if the helper cannot start, times out, exits unsuccessfully, or returns an empty or invalid session.
 pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
     use tokio::io::AsyncWriteExt;
     let mut command = tokio::process::Command::new(std::env::current_exe()?);
@@ -53,12 +61,9 @@ pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
     let mut stdin = child.stdin.take().context("Login pipe unavailable")?;
     stdin.write_all(&serde_json::to_vec(&cookies)?).await?;
     drop(stdin);
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(900),
-        child.wait_with_output(),
-    )
-    .await
-    .context("Login timed out")??;
+    let result = tokio::time::timeout(std::time::Duration::from_mins(15), child.wait_with_output())
+        .await
+        .context("Login timed out")??;
     ensure!(
         result.status.success(),
         "arca.live sign-in window exited unexpectedly ({}). Its diagnostic output is available in Picora’s process log.",
@@ -76,6 +81,8 @@ pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
     );
     Ok(cookies)
 }
+/// # Errors
+/// Returns an error if the inherited session is invalid or the native sign-in window cannot initialize.
 pub fn helper() -> Result<()> {
     use tao::{
         event::{Event, WindowEvent},
@@ -121,9 +128,15 @@ pub fn helper() -> Result<()> {
             ..
         } = event
         {
-            let result: Vec<String> = view
-                .cookies()
-                .unwrap_or_default()
+            let cookies = match view.cookies() {
+                Ok(cookies) => cookies,
+                Err(error) => {
+                    eprintln!("Could not read sign-in cookies: {error}");
+                    *flow = ControlFlow::ExitWithCode(1);
+                    return;
+                }
+            };
+            let result: Vec<String> = cookies
                 .into_iter()
                 .filter(|c| {
                     c.domain().is_some_and(|d| {
@@ -132,11 +145,19 @@ pub fn helper() -> Result<()> {
                 })
                 .map(|c| c.to_string())
                 .collect();
-            if let Ok(bytes) = serde_json::to_vec(&result) {
-                let _ = std::io::stdout().write_all(&bytes);
-                let _ = std::io::stdout().flush();
-            }
-            *flow = ControlFlow::Exit;
+            let written = (|| -> Result<()> {
+                let bytes = serde_json::to_vec(&result)?;
+                std::io::stdout().write_all(&bytes)?;
+                std::io::stdout().flush()?;
+                Ok(())
+            })();
+            *flow = match written {
+                Ok(()) => ControlFlow::Exit,
+                Err(error) => {
+                    eprintln!("Could not return sign-in session: {error:#}");
+                    ControlFlow::ExitWithCode(1)
+                }
+            };
         }
     });
 }

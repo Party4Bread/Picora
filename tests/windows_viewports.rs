@@ -1,6 +1,6 @@
 //! Native regression for Picora's hidden picker + immediate library viewport.
 //! Run on an interactive Windows desktop:
-//! cargo test --locked --test windows_viewports -- --ignored --nocapture
+//! cargo test --locked --test `windows_viewports` -- --ignored --nocapture
 #![cfg(target_os = "windows")]
 
 use eframe::egui;

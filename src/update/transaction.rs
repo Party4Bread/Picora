@@ -18,6 +18,8 @@ pub struct InstallLayout {
     pub target: Target,
 }
 impl InstallLayout {
+    /// # Errors
+    /// Rejects unsupported platforms, missing executables, and invalid bundle layouts.
     pub fn detect(executable: &Path) -> Result<Self> {
         let target = Target::current().context("No update build for this architecture")?;
         let exe = executable.canonicalize()?;
@@ -35,11 +37,13 @@ impl InstallLayout {
         } else {
             exe.parent().context("Executable has no parent")?
         };
-        Self::for_root(root.to_owned(), target)
+        Self::for_root(root, target)
     }
-    pub fn for_root(root: PathBuf, target: Target) -> Result<Self> {
+    /// # Errors
+    /// Rejects missing or symlinked roots and filesystem canonicalization failures.
+    pub fn for_root(root: &Path, target: Target) -> Result<Self> {
         ensure!(
-            !fs::symlink_metadata(&root)?.file_type().is_symlink(),
+            !fs::symlink_metadata(root)?.file_type().is_symlink(),
             "Installation cannot be a symlink"
         );
         Ok(Self {
@@ -47,6 +51,7 @@ impl InstallLayout {
             target,
         })
     }
+    #[must_use]
     pub fn executable(&self) -> PathBuf {
         self.root.join(match self.target {
             Target::WindowsX86_64 => "picora.exe",
@@ -54,6 +59,8 @@ impl InstallLayout {
             Target::MacosAarch64 => "Contents/MacOS/picora",
         })
     }
+    /// # Errors
+    /// Rejects an installation root without a filename or parent directory.
     pub fn state_dir(&self) -> Result<PathBuf> {
         let name = self
             .root
@@ -66,6 +73,8 @@ impl InstallLayout {
             .context("Invalid installation parent")?
             .join(format!(".{name}.picora-update")))
     }
+    /// # Errors
+    /// Rejects symlinked or unwritable installation directories and read-only Windows executables.
     pub fn check_writable(&self) -> Result<()> {
         let directory = if self.target == Target::MacosAarch64 {
             self.root.parent().context("Invalid bundle parent")?
@@ -83,6 +92,8 @@ impl InstallLayout {
         );
         Ok(())
     }
+    /// # Errors
+    /// Returns an error if the protected lock directory cannot be created or another process holds the startup gate.
     pub fn startup_gate(&self) -> Result<File> {
         let state = self.state_dir()?;
         reject_symlink(&state)?;
@@ -212,7 +223,7 @@ fn rename(from: &Path, to: &Path) -> Result<()> {
                         std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::WouldBlock
                     ) =>
             {
-                std::thread::sleep(Duration::from_millis(100))
+                std::thread::sleep(Duration::from_millis(100));
             }
             Err(e) => return Err(e.into()),
         }
@@ -236,6 +247,8 @@ fn durable_write_with(path: &Path, write: impl FnOnce(&mut File) -> Result<()>) 
 }
 
 impl Transaction {
+    /// # Errors
+    /// Rejects invalid installation or staging paths, incomplete inventories, and failures creating the rollback journal or backup.
     pub fn prepare(layout: &InstallLayout, staged: &StagedUpdate) -> Result<Self> {
         ensure!(layout.target == staged.target, "Wrong update architecture");
         reject_symlink(&layout.root)?;
@@ -339,6 +352,8 @@ impl Transaction {
             self.layout.root.join(&entry.relative)
         }
     }
+    /// # Errors
+    /// Returns an error if staged files cannot be installed or transaction state cannot be recorded. Callers must roll back a failed application.
     pub fn apply(&mut self) -> Result<()> {
         let state = self.layout.state_dir()?;
         for entry in &self.journal.entries {
@@ -351,6 +366,8 @@ impl Transaction {
         }
         Ok(())
     }
+    /// # Errors
+    /// Returns an error if the previous installation cannot be restored or rollback state cannot be recorded.
     pub fn rollback(&mut self) -> Result<()> {
         let state = self.layout.state_dir()?;
         if !state.join("journal.json").exists() {
@@ -375,6 +392,8 @@ impl Transaction {
         durable_write(&state.join("reverted"), b"ok")?;
         self.cleanup()
     }
+    /// # Errors
+    /// Returns an error if the commit marker or transaction cleanup fails.
     pub fn commit(&mut self) -> Result<()> {
         durable_write(&self.layout.state_dir()?.join("committed"), b"ok")?;
         self.cleanup()
@@ -393,6 +412,8 @@ impl Transaction {
         Ok(())
     }
 }
+/// # Errors
+/// Rejects corrupt recovery state and reports failures restoring an interrupted installation.
 pub fn recover(layout: &InstallLayout) -> Result<()> {
     let state = layout.state_dir()?;
     if !state.join("journal.json").exists() {
@@ -435,9 +456,8 @@ fn replace(from: &Path, to: &Path) -> Result<()> {
             use std::os::unix::ffi::OsStrExt;
             let a = std::ffi::CString::new(from.as_os_str().as_bytes())?;
             let b = std::ffi::CString::new(to.as_os_str().as_bytes())?;
-            // SAFETY: both paths are valid NUL-terminated strings; atomic exchange
-            // keeps a launchable bundle present even if power fails after the call.
             #[cfg(target_os = "macos")]
+            // SAFETY: both CStrings outlive the synchronous call; no path pointers escape.
             let result = unsafe {
                 libc::renameatx_np(
                     libc::AT_FDCWD,
@@ -448,6 +468,7 @@ fn replace(from: &Path, to: &Path) -> Result<()> {
                 )
             };
             #[cfg(target_os = "linux")]
+            // SAFETY: both CStrings outlive the synchronous call; no path pointers escape.
             let result = unsafe {
                 libc::renameat2(
                     libc::AT_FDCWD,

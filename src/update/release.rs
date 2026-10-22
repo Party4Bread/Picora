@@ -19,6 +19,7 @@ pub enum Target {
     MacosAarch64,
 }
 impl Target {
+    #[must_use]
     pub fn current() -> Option<Self> {
         match (std::env::consts::OS, std::env::consts::ARCH) {
             ("windows", "x86_64") => Some(Self::WindowsX86_64),
@@ -27,6 +28,7 @@ impl Target {
             _ => None,
         }
     }
+    #[must_use]
     pub fn asset_name(self, version: &str) -> String {
         let suffix = match self {
             Self::WindowsX86_64 => "windows-x86_64.zip",
@@ -72,6 +74,8 @@ pub struct AvailableUpdate {
     pub url: String,
 }
 
+/// # Errors
+/// Rejects invalid semantic versions, tags without a `v` prefix, and non-stable release tags.
 pub fn newer(current: &str, tag: &str) -> Result<bool> {
     let v = Version::parse(
         tag.strip_prefix('v')
@@ -83,6 +87,8 @@ pub fn newer(current: &str, tag: &str) -> Result<bool> {
     );
     Ok(v > Version::parse(current)?)
 }
+/// # Errors
+/// Rejects URLs outside this project’s HTTPS GitHub release downloads, including credentials, query strings, and fragments.
 pub fn asset_url(value: &str) -> Result<Url> {
     let url = Url::parse(value)?;
     ensure!(
@@ -115,6 +121,8 @@ fn release_asset<'a>(release: &'a Release, name: &str) -> Result<&'a GithubAsset
     );
     Ok(asset)
 }
+/// # Errors
+/// Rejects inconsistent release metadata, duplicate targets, invalid sizes or digests, and missing or mismatched assets.
 pub fn select_update(
     current: &str,
     target: Target,
@@ -171,11 +179,13 @@ pub struct ReleaseClient {
     client: reqwest::Client,
 }
 impl ReleaseClient {
+    /// # Errors
+    /// Returns an error if the release HTTP client cannot initialize.
     pub fn new() -> Result<Self> {
         let client = reqwest::Client::builder()
             .user_agent(concat!("Picora/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(300))
+            .timeout(Duration::from_mins(5))
             .redirect(reqwest::redirect::Policy::custom(|a| {
                 let u = a.url();
                 if a.previous().len() < 5
@@ -207,6 +217,11 @@ impl ReleaseClient {
             .send()
             .await?
             .error_for_status()?;
+        ensure!(
+            response.status().is_success(),
+            "Unexpected release metadata status: {}",
+            response.status()
+        );
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await? {
             ensure!(
@@ -217,6 +232,8 @@ impl ReleaseClient {
         }
         Ok(serde_json::from_slice(&bytes)?)
     }
+    /// # Errors
+    /// Returns an error if release metadata cannot be fetched or validated.
     pub async fn check(&self, current: &str, target: Target) -> Result<Option<AvailableUpdate>> {
         let release: Release = match self
             .metadata("https://api.github.com/repos/Party4Bread/Picora/releases/latest")
@@ -224,7 +241,8 @@ impl ReleaseClient {
         {
             Ok(r) => r,
             Err(e)
-                if e.downcast_ref::<reqwest::Error>().and_then(|e| e.status())
+                if e.downcast_ref::<reqwest::Error>()
+                    .and_then(reqwest::Error::status)
                     == Some(reqwest::StatusCode::NOT_FOUND) =>
             {
                 return Ok(None);
@@ -242,6 +260,8 @@ impl ReleaseClient {
         let manifest = self.metadata(&a.browser_download_url).await?;
         select_update(current, target, &release, manifest)
     }
+    /// # Errors
+    /// Rejects unsuccessful or oversized responses and size or digest mismatches; reports network and file I/O failures.
     pub async fn download(
         &self,
         update: &AvailableUpdate,
@@ -263,6 +283,12 @@ impl ReleaseClient {
         path: &Path,
         mut progress: impl FnMut(u64, u64),
     ) -> Result<()> {
+        response.error_for_status_ref()?;
+        ensure!(
+            response.status().is_success(),
+            "Unexpected update download status: {}",
+            response.status()
+        );
         let mut file = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -338,7 +364,10 @@ mod tests {
         }
         assert!(
             client
-                .metadata::<Manifest>(&server(200, vec![b' '; MAX_METADATA as usize + 1]))
+                .metadata::<Manifest>(&server(
+                    200,
+                    vec![b' '; usize::try_from(MAX_METADATA).unwrap() + 1]
+                ))
                 .await
                 .is_err()
         );
@@ -380,6 +409,36 @@ mod tests {
             );
             assert!(!path.exists());
         }
+    }
+    #[tokio::test]
+    async fn stopped_redirect_is_rejected_before_creating_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("archive");
+        let update = AvailableUpdate {
+            version: "99.0.0".into(),
+            notes: String::new(),
+            url: String::new(),
+            asset: ReleaseAsset {
+                target: Target::LinuxX86_64,
+                name: String::new(),
+                size: 5,
+                sha256: hex::encode(Sha256::digest(b"build")),
+            },
+        };
+        let response = reqwest::get(server(302, b"build".to_vec())).await.unwrap();
+        let error = ReleaseClient::save_response(response, &update, &path, |_, _| {
+            panic!("must not write redirect body")
+        })
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("302"));
+        assert!(!path.exists());
+        let client = ReleaseClient::new().unwrap();
+        let error = client
+            .metadata::<serde_json::Value>(&server(302, b"{}".to_vec()))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("302"));
     }
     fn fs_read(path: &Path) -> Vec<u8> {
         std::fs::read(path).unwrap()

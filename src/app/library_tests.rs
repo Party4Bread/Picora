@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::Sticker;
 
 #[cfg(target_os = "macos")]
 #[test]
@@ -47,17 +48,18 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
     let settings = Settings::default();
     let (tx, rx) = mpsc::channel();
     let (_, activation) = mpsc::channel();
-    let services = Services::new(
+    let services = Services::with_session(
         runtime,
         crate::media::MediaCache::new(root.join("media")).unwrap(),
         Bus {
             tx,
             ctx: ctx.clone(),
         },
+        Ok(Vec::new()),
     )
     .unwrap();
     App {
-        updates: Default::default(),
+        updates: crate::update::controller::Controller::default(),
         update_health_sent: false,
         packs: store.packs().unwrap(),
         groups: store.groups().unwrap(),
@@ -67,11 +69,9 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         activation,
         shortcut_text: settings.shortcut.clone(),
         settings,
-        filter: Filter::All,
-        picker_filter: Filter::Favorites,
-        picker_search: String::new(),
+        library_state: BrowseState::new(Filter::All),
+        picker_state: BrowseState::new(Filter::Favorites),
         tab: Tab::Library,
-        search: String::new(),
         query: String::new(),
         source: Provider::Dcinside,
         page: 1,
@@ -81,11 +81,10 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         library_open: true,
         picker_open: false,
         focus_search: true,
-        selected: 0,
         status: "Choose a sticker to copy and paste".into(),
         error: false,
         browsing: false,
-        installing: false,
+        downloading_pack: false,
         login_busy: false,
         group_name: String::new(),
         rename: String::new(),
@@ -98,9 +97,10 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         paste_at: None,
         shortcut: None,
         shortcut_status: String::new(),
+        shortcut_generation: 0,
         #[cfg(target_os = "linux")]
         portal_task: None,
-        _tray: None,
+        tray: None,
         quit: false,
         data_dir: root,
     }
@@ -156,7 +156,7 @@ fn click(app: &mut App, ctx: &egui::Context, pos: egui::Pos2) {
                     pos,
                     button: egui::PointerButton::Primary,
                     pressed,
-                    modifiers: Default::default(),
+                    modifiers: egui::Modifiers::default(),
                 },
             ],
         );
@@ -193,15 +193,15 @@ fn favorite_button_populates_library_sidebar_before_download_finishes() {
     previous.title = "Previous favorite pack".into();
     app.store.save_favorite_pack(&previous).unwrap();
     app.refresh();
-    app.filter = Filter::Pack("arca:42".into());
-    app.search = "previous".into();
+    app.library_state.filter = Filter::Pack("arca:42".into());
+    app.library_state.search = "previous".into();
     for _ in 0..3 {
         frame(&mut app, &ctx, vec![]);
     }
     let output = frame(&mut app, &ctx, vec![]);
     let button = label(&output, "Add pack to favorites").expect("favorite button visible");
     click(&mut app, &ctx, button);
-    assert!(app.installing, "favorite click should start install");
+    assert!(app.downloading_pack, "favorite click should start install");
     assert_eq!(app.store.packs().unwrap().len(), 2, "both packs persisted");
     app.preview = None;
     app.tab = Tab::Library;
@@ -209,7 +209,7 @@ fn favorite_button_populates_library_sidebar_before_download_finishes() {
     let entry =
         label(&output, "New favorite pack").expect("new pack appears in sidebar immediately");
     click(&mut app, &ctx, entry);
-    assert!(app.filter == Filter::Pack("arca:54950".into()));
+    assert!(app.library_state.filter == Filter::Pack("arca:54950".into()));
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
                     pos,
                     button: egui::PointerButton::Primary,
                     pressed,
-                    modifiers: Default::default(),
+                    modifiers: egui::Modifiers::default(),
                 },
             ],
         );
@@ -275,14 +275,14 @@ fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
                     pos,
                     button: egui::PointerButton::Primary,
                     pressed,
-                    modifiers: Default::default(),
+                    modifiers: egui::Modifiers::default(),
                 },
             ],
         );
     }
-    assert!(app.picker_filter == Filter::Pack("dcinside:41982".into()));
+    assert!(app.picker_state.filter == Filter::Pack("dcinside:41982".into()));
     assert!(
-        app.filter == Filter::All,
+        app.library_state.filter == Filter::All,
         "picker selection must not change library filter"
     );
     let output = render(&mut app, vec![]);
@@ -308,10 +308,10 @@ fn library_grid_does_not_change_picker_keyboard_selection() {
     pack.stickers.truncate(1);
     app.store.save_favorite_pack(&pack).unwrap();
     app.refresh();
-    app.selected = 20;
+    app.picker_state.selected = 20;
     frame(&mut app, &ctx, vec![]);
     assert_eq!(
-        app.selected, 20,
+        app.picker_state.selected, 20,
         "rendering library must not move picker selection"
     );
 }
@@ -369,13 +369,20 @@ fn picker_enter_does_not_copy_a_sticker_while_a_popup_is_open() {
                 physical_key: None,
                 pressed: true,
                 repeat: false,
-                modifiers: Default::default(),
+                modifiers: egui::Modifiers::default(),
             }],
             ..Default::default()
         },
         |ctx| {
             egui::Popup::open_id(ctx, egui::Id::new("collection-menu"));
-            egui::CentralPanel::default().show(ctx, |ui| app.grid(ui, app.items(), true));
+            egui::CentralPanel::default().show(ctx, |ui| {
+                app.grid(
+                    ui,
+                    &app.items(&app.picker_state.filter, &app.picker_state.search)
+                        .unwrap(),
+                    View::Picker,
+                );
+            });
         },
     );
     assert!(
@@ -392,6 +399,7 @@ fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
         .build()
         .unwrap();
     let ctx = egui::Context::default();
+    ctx.enable_accesskit();
     let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
     let mut pack = crate::providers::dcinside::parse_detail(include_str!(
         "../../tests/fixtures/dc-detail.json"
@@ -406,19 +414,23 @@ fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
             label(&output, "Manage").is_none(),
             "no duplicated Manage button"
         );
-        let pos = output
-            .shapes
+        let bounds = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .unwrap()
+            .nodes
             .iter()
-            .find_map(|shape| match &shape.shape {
-                egui::epaint::Shape::Rect(r)
-                    if (r.rect.width() - 80.).abs() < 0.1
-                        && (r.rect.height() - 80.).abs() < 0.1 =>
-                {
-                    Some(r.rect.center())
-                }
-                _ => None,
+            .find_map(|(_, node)| {
+                (node.label() == Some(pack.stickers[0].label.as_str()))
+                    .then(|| node.bounds())
+                    .flatten()
             })
-            .expect("sticker tile");
+            .expect("accessible sticker button");
+        let pos = egui::pos2(
+            f64::midpoint(bounds.x0, bounds.x1) as f32,
+            f64::midpoint(bounds.y0, bounds.y1) as f32,
+        );
         for pressed in [true, false] {
             frame(
                 &mut app,
@@ -429,7 +441,7 @@ fn library_right_click_menu_can_unfavorite_and_remove_one_sticker() {
                         pos,
                         button: egui::PointerButton::Secondary,
                         pressed,
-                        modifiers: Default::default(),
+                        modifiers: egui::Modifiers::default(),
                     },
                 ],
             );
@@ -462,7 +474,7 @@ fn minimum_picker_keeps_custom_group_identity_visible() {
     let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
     let group = app.store.create_group("Work replies").unwrap();
     app.refresh();
-    app.picker_filter = Filter::Group(group);
+    app.picker_state.filter = Filter::Group(group);
     for _ in 0..3 {
         let output = ctx.run(
             egui::RawInput {
@@ -476,7 +488,7 @@ fn minimum_picker_keeps_custom_group_identity_visible() {
         );
         assert!(label(&output, "Work replies").is_some());
         assert!(label(&output, "Library").is_some());
-        assert!(app.filter == Filter::All);
+        assert!(app.library_state.filter == Filter::All);
         assert!(app.pending.is_none());
     }
 }
@@ -502,7 +514,7 @@ fn picker_accepts_repeated_korean_commits_without_preedit() {
                 ..Default::default()
             };
             let _ = ctx.run(input, |ctx| app.picker(ctx));
-            app.picker_search.clone()
+            app.picker_state.search.clone()
         };
         render(vec![]);
         render(vec![]);
@@ -592,7 +604,7 @@ fn animation_cache_pressure_keeps_still_thumbnails() {
             })
             .collect();
         app.cache_visual(
-            index.to_string(),
+            &index.to_string(),
             Visual {
                 frames,
                 delays: vec![100; 3],
@@ -669,6 +681,7 @@ fn evicted_animation_keeps_still_and_reloads_only_on_hover() {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     rect = app
                         .thumb(ui, Provider::Dcinside, "demoted", 84., false)
+                        .response
                         .rect;
                 });
             },
@@ -715,7 +728,10 @@ fn visible_animation_loads_still_first_then_frames_on_hover() {
             },
             |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    rect = app.thumb(ui, Provider::Dcinside, url, 80., false).rect;
+                    rect = app
+                        .thumb(ui, Provider::Dcinside, url, 80., false)
+                        .response
+                        .rect;
                 });
             },
         );
@@ -782,4 +798,301 @@ fn accounts_show_saved_verified_and_failed_session_states() {
     assert!(label(&output, "Connection needs attention").is_some());
     assert!(label(&output, "Website verification required").is_some());
     assert!(label(&output, "Catalog access verified.").is_none());
+}
+
+#[test]
+fn retry_thumbnail_click_does_not_activate_sticker() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    app.failed.insert("broken".into(), "download failed".into());
+    let mut render = |events| {
+        let mut result = None;
+        let _ = ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    result = Some(app.thumb(ui, Provider::Dcinside, "broken", 80., false));
+                });
+            },
+        );
+        result.unwrap()
+    };
+    let center = render(vec![]).response.rect.center();
+    render(vec![
+        egui::Event::PointerMoved(center),
+        egui::Event::PointerButton {
+            pos: center,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        },
+    ]);
+    let response = render(vec![egui::Event::PointerButton {
+        pos: center,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    }]);
+    assert!(response.response.clicked());
+    assert!(!response.activated);
+    assert!(!app.failed.contains_key("broken"));
+    assert!(app.pending.is_none());
+}
+
+#[test]
+fn failed_library_query_is_not_an_empty_collection() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    rusqlite::Connection::open(root.path().join("library.sqlite3"))
+        .unwrap()
+        .execute_batch("DROP TABLE recents")
+        .unwrap();
+    app.library_state.filter = Filter::Recent;
+    assert!(
+        app.items(&app.library_state.filter, &app.library_state.search)
+            .is_err()
+    );
+    let output = ctx.run(egui::RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| app.library_content(ui));
+    });
+    assert!(app.error);
+    assert!(app.status.contains("Could not load stickers"));
+    assert!(label(&output, "No stickers in this collection").is_none());
+}
+
+#[test]
+fn group_rendering_preserves_library_and_picker_queries() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let group = app.store.create_group("Test group").unwrap();
+    app.refresh();
+    app.chosen_group = Some(group);
+    app.library_state.filter = Filter::Recent;
+    app.library_state.search = "library query".into();
+    app.picker_state.search = "picker query".into();
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| app.groups_ui(ui));
+    });
+    assert!(app.library_state.filter == Filter::Recent);
+    assert_eq!(app.library_state.search, "library query");
+    assert_eq!(app.picker_state.search, "picker query");
+    assert!(app.items(&Filter::Group(group), "").unwrap().is_empty());
+}
+
+#[test]
+fn copy_completion_respects_cancellation_modifiers_and_clipboard_failure() {
+    for case in [
+        "success",
+        "cancelled",
+        "modifiers",
+        "failure",
+        "copy-only",
+        "no-target",
+        "preview",
+        "blurred",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let ctx = egui::Context::default();
+        let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+        let pack = crate::providers::dcinside::parse_detail(include_str!(
+            "../../tests/fixtures/dc-detail.json"
+        ))
+        .unwrap();
+        app.store.save_favorite_pack(&pack).unwrap();
+        app.refresh();
+        let item = app.items(&Filter::All, "").unwrap().remove(0);
+        let interaction = app.services.paste_ticket();
+        app.picker_open = true;
+        app.pending = Some(PendingPaste {
+            interaction,
+            picker: None,
+            target: (case != "no-target").then_some(Target(42)),
+            from_picker: true,
+            auto_paste: case != "copy-only",
+        });
+        if case == "cancelled" {
+            app.open_library();
+        }
+        if case == "preview" {
+            app.store.remove_pack(&item.pack_key).unwrap();
+        }
+        app.services.bus.send(Event::Copied(if case == "failure" {
+            Err(anyhow::anyhow!("clipboard unavailable"))
+        } else {
+            Ok(item)
+        }));
+        let mut input = egui::RawInput::default();
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .focused = Some(case != "blurred");
+        if case == "modifiers" {
+            input.modifiers.shift = true;
+        }
+        let _ = ctx.run(input, |ctx| app.handle_events(ctx));
+        assert!(app.pending.is_none(), "{case}");
+        assert_eq!(
+            app.paste_at.is_some(),
+            matches!(case, "success" | "preview"),
+            "{case}"
+        );
+        assert_eq!(
+            app.picker_open,
+            matches!(case, "cancelled" | "failure"),
+            "{case}"
+        );
+        if case != "failure" {
+            assert!(!app.error, "{case}: {}", app.status);
+        }
+        if case == "success" {
+            app.open_library();
+            assert!(
+                app.paste_at.is_none(),
+                "opening library cancels scheduled paste"
+            );
+        }
+        if case == "failure" {
+            assert!(app.error);
+            assert!(app.status.contains("clipboard unavailable"));
+        }
+    }
+}
+
+#[test]
+fn shortcut_settings_change_only_after_current_registration_succeeds() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let original = app.settings.shortcut.clone();
+    app.shortcut_generation = 2;
+    app.shortcut_registered(1, "Ctrl+Alt+S".into(), true, Ok(()));
+    assert_eq!(app.store.settings().unwrap().shortcut, original);
+    app.shortcut_registered(
+        2,
+        "Ctrl+Alt+S".into(),
+        true,
+        Err(anyhow::anyhow!("permission denied")),
+    );
+    assert_eq!(app.store.settings().unwrap().shortcut, original);
+    assert!(app.shortcut_status.contains("permission denied"));
+    app.shortcut_registered(2, "Ctrl+Alt+S".into(), true, Ok(()));
+    assert_eq!(app.store.settings().unwrap().shortcut, "Ctrl+Alt+S");
+    assert_eq!(app.shortcut_status, "Active: Ctrl+Alt+S");
+}
+
+#[test]
+fn media_failure_preserves_the_diagnostic_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(dir.path().to_owned(), rt.handle().clone(), &ctx);
+    let permit = std::sync::Arc::new(tokio::sync::Semaphore::new(1))
+        .try_acquire_owned()
+        .unwrap();
+    app.services.bus.send(Event::Media(
+        "test-sticker".into(),
+        Err(anyhow::anyhow!("missing video track").context("Invalid MP4 sticker")),
+        true,
+        permit,
+    ));
+    app.handle_events(&ctx);
+    assert_eq!(
+        app.failed.get("test-sticker").unwrap(),
+        "Invalid MP4 sticker: missing video track"
+    );
+}
+
+#[test]
+fn update_panel_cancels_downloads_but_not_handoff_and_shows_failure() {
+    use crate::update::controller::State;
+    fn render(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| app.updates_ui(ui));
+            },
+        )
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(dir.path().to_owned(), rt.handle().clone(), &ctx);
+    app.updates.state = State::Downloading(5, 10);
+    render(&mut app, &ctx, vec![]);
+    let output = render(&mut app, &ctx, vec![]);
+    let position = label(&output, "Cancel update").expect("download offers cancellation");
+    for pressed in [true, false] {
+        render(
+            &mut app,
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+    }
+    assert!(matches!(app.updates.state, State::Idle));
+    app.updates.state = State::HandingOff;
+    let output = render(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Cancel update").is_none());
+    assert!(label(&output, "Preparing restart…").is_some());
+    app.updates.state = State::Error("Update checksum or size mismatch".into());
+    let output = render(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Update checksum or size mismatch").is_some());
+}
+
+#[test]
+fn synchronous_reports_preserve_causes_and_clear_errors_after_success() {
+    let temp = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(temp.path().to_owned(), runtime.handle().clone(), &ctx);
+    app.report(
+        Err(anyhow::anyhow!("Permission denied").context("Cannot delete saved session")),
+        "Signed out",
+    );
+    assert!(app.error);
+    assert_eq!(app.status, "Cannot delete saved session: Permission denied");
+    app.report(Ok(()), "Signed out");
+    assert!(!app.error);
+    assert_eq!(app.status, "Signed out");
 }

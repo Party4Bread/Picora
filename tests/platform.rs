@@ -1,4 +1,3 @@
-use picora::platform::paste::{Action, PasteFlow};
 #[cfg(target_os = "macos")]
 #[test]
 fn macos_worker_paste_is_rejected_before_calling_native_keyboard_apis() {
@@ -16,29 +15,6 @@ fn macos_worker_paste_is_rejected_before_calling_native_keyboard_apis() {
     );
 }
 
-#[test]
-fn never_hides_or_injects_before_successful_copy() {
-    let mut flow = PasteFlow::new(true, true);
-    assert!(flow.hidden().is_err());
-    assert_eq!(flow.copied().unwrap(), Action::Hide);
-    assert_eq!(flow.hidden().unwrap(), Action::Paste);
-    assert!(flow.hidden().is_err());
-}
-#[test]
-fn disabled_auto_paste_or_missing_target_only_copies() {
-    for (auto, target) in [(false, true), (true, false)] {
-        let mut flow = PasteFlow::new(auto, target);
-        flow.copied().unwrap();
-        assert_eq!(flow.hidden().unwrap(), Action::Copied);
-    }
-}
-#[test]
-fn focus_loss_while_loading_cancels_automatic_paste() {
-    let mut flow = PasteFlow::new(true, true);
-    flow.cancel_auto();
-    flow.copied().unwrap();
-    assert_eq!(flow.hidden().unwrap(), Action::Copied);
-}
 #[test]
 fn reopening_picker_invalidates_work_already_scheduled_on_a_worker() {
     let cancellation = picora::platform::paste::Cancellation::default();

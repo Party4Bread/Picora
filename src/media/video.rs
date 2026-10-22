@@ -1,4 +1,4 @@
-//! Decode bounded H.264 MP4 stickers with the statically bundled OpenH264 codec.
+//! Decode bounded H.264 MP4 stickers with the statically bundled `OpenH264` codec.
 use super::Frame;
 use anyhow::{Context, Result, ensure};
 use openh264::{
@@ -12,7 +12,7 @@ const MAX_RGBA: usize = 64 * 1024 * 1024;
 
 pub(super) fn decode(bytes: &[u8]) -> Result<Vec<Frame>> {
     ensure!(
-        bytes.len() <= crate::providers::MAX_DOWNLOAD,
+        bytes.len() <= super::MAX_ASSET_BYTES,
         "MP4 download is too large"
     );
     validate_boxes(bytes, 0)?;
@@ -23,6 +23,46 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Vec<Frame>> {
         .values()
         .find(|t| t.track_type().ok() == Some(mp4::TrackType::Video))
         .context("MP4 has no video track")?;
+    let ValidatedTrack {
+        id,
+        count,
+        scale,
+        length_size,
+        header,
+    } = validate_track(track, bytes.len())?;
+    let mut decoder = Decoder::new()?;
+    let options = DecodeOptions::default().flush_after_decode(Flush::NoFlush);
+    decoder.decode_with_options(&header, options.clone())?;
+    let mut frames = Vec::new();
+    let mut timings = Vec::new();
+    let mut allocated = 0usize;
+    for index in 1..=count {
+        let sample = mp4.read_sample(id, index)?.context("Missing MP4 sample")?;
+        let pts = i64::try_from(sample.start_time)?
+            .checked_add(i64::from(sample.rendering_offset))
+            .context("Invalid MP4 timestamp")?;
+        timings.push((pts, sample.duration));
+        let packet = annex_b(&sample.bytes, length_size)?;
+        if let Some(yuv) = decoder.decode_with_options(&packet, options.clone())? {
+            frames.push(frame(&yuv, &mut allocated)?);
+        }
+    }
+    for yuv in decoder.flush_remaining()? {
+        frames.push(frame(&yuv, &mut allocated)?);
+    }
+    apply_timing(&mut frames, &mut timings, scale)?;
+    Ok(frames)
+}
+
+struct ValidatedTrack {
+    id: u32,
+    count: u32,
+    scale: u64,
+    length_size: usize,
+    header: Vec<u8>,
+}
+
+fn validate_track(track: &mp4::Mp4Track, input_len: usize) -> Result<ValidatedTrack> {
     let avc = track
         .trak
         .mdia
@@ -51,16 +91,42 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Vec<Frame>> {
         track.trak.mdia.mdhd.duration <= 120 * scale,
         "MP4 sticker exceeds two minutes"
     );
+    validate_sample_tables(track, count, scale, input_len)?;
+    let id = track.track_id();
+    let length_size = usize::from((avc.avcc.length_size_minus_one & 3) + 1);
+    let mut header = Vec::new();
+    for nal in avc
+        .avcc
+        .sequence_parameter_sets
+        .iter()
+        .chain(&avc.avcc.picture_parameter_sets)
+    {
+        header.extend_from_slice(&[0, 0, 0, 1]);
+        header.extend_from_slice(&nal.bytes);
+    }
+    ensure!(!header.is_empty(), "MP4 is missing H.264 headers");
+    Ok(ValidatedTrack {
+        id,
+        count,
+        scale,
+        length_size,
+        header,
+    })
+}
+
+fn validate_sample_tables(
+    track: &mp4::Mp4Track,
+    count: u32,
+    scale: u64,
+    input_len: usize,
+) -> Result<()> {
+    let table = &track.trak.mdia.minf.stbl;
     // mp4::read_sample trusts sample tables and allocates the declared sample
     // length before reading. Validate sizes and timing before entering it.
-    let table = &track.trak.mdia.minf.stbl;
     let sizes = &table.stsz;
     ensure!(
-        sizes.sample_size as usize <= bytes.len()
-            && sizes
-                .sample_sizes
-                .iter()
-                .all(|n| *n as usize <= bytes.len()),
+        sizes.sample_size as usize <= input_len
+            && sizes.sample_sizes.iter().all(|n| *n as usize <= input_len),
         "Invalid MP4 sample size"
     );
     let total_size = if sizes.sample_size > 0 {
@@ -72,7 +138,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Vec<Frame>> {
         );
         sizes.sample_sizes.iter().map(|n| u64::from(*n)).sum()
     };
-    ensure!(total_size <= bytes.len() as u64, "Invalid MP4 sample sizes");
+    ensure!(total_size <= input_len as u64, "Invalid MP4 sample sizes");
     let timing_count: u64 = table
         .stts
         .entries
@@ -105,6 +171,11 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Vec<Frame>> {
             "Invalid MP4 composition timing"
         );
     }
+    validate_chunks(track, count, input_len)
+}
+
+fn validate_chunks(track: &mp4::Mp4Track, count: u32, input_len: usize) -> Result<()> {
+    let table = &track.trak.mdia.minf.stbl;
     ensure!(
         table
             .stsc
@@ -132,64 +203,39 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Vec<Frame>> {
             offsets
                 .entries
                 .iter()
-                .all(|n| u64::from(*n) < bytes.len() as u64),
+                .all(|n| u64::from(*n) < input_len as u64),
             "Invalid MP4 chunk offset"
         );
     }
     if let Some(offsets) = &table.co64 {
         ensure!(
-            offsets.entries.iter().all(|n| *n < bytes.len() as u64),
+            offsets.entries.iter().all(|n| *n < input_len as u64),
             "Invalid MP4 chunk offset"
         );
     }
-    let id = track.track_id();
-    let length_size = usize::from((avc.avcc.length_size_minus_one & 3) + 1);
-    let mut header = Vec::new();
-    for nal in avc
-        .avcc
-        .sequence_parameter_sets
-        .iter()
-        .chain(&avc.avcc.picture_parameter_sets)
-    {
-        header.extend_from_slice(&[0, 0, 0, 1]);
-        header.extend_from_slice(&nal.bytes);
+    Ok(())
+}
+
+fn annex_b(mut remaining: &[u8], length_size: usize) -> Result<Vec<u8>> {
+    let mut packet = Vec::new();
+    while !remaining.is_empty() {
+        ensure!(remaining.len() >= length_size, "Truncated H.264 NAL length");
+        let len = remaining[..length_size]
+            .iter()
+            .fold(0usize, |n, b| (n << 8) | usize::from(*b));
+        remaining = &remaining[length_size..];
+        ensure!(
+            len > 0 && len <= remaining.len(),
+            "Invalid H.264 NAL length"
+        );
+        packet.extend_from_slice(&[0, 0, 0, 1]);
+        packet.extend_from_slice(&remaining[..len]);
+        remaining = &remaining[len..];
     }
-    ensure!(!header.is_empty(), "MP4 is missing H.264 headers");
-    let mut decoder = Decoder::new()?;
-    let options = DecodeOptions::default().flush_after_decode(Flush::NoFlush);
-    decoder.decode_with_options(&header, options.clone())?;
-    let mut frames = Vec::new();
-    let mut timings = Vec::new();
-    let mut allocated = 0usize;
-    for index in 1..=count {
-        let sample = mp4.read_sample(id, index)?.context("Missing MP4 sample")?;
-        let pts = i64::try_from(sample.start_time)?
-            .checked_add(i64::from(sample.rendering_offset))
-            .context("Invalid MP4 timestamp")?;
-        timings.push((pts, sample.duration));
-        let mut packet = Vec::new();
-        let mut remaining = sample.bytes.as_ref();
-        while !remaining.is_empty() {
-            ensure!(remaining.len() >= length_size, "Truncated H.264 NAL length");
-            let len = remaining[..length_size]
-                .iter()
-                .fold(0usize, |n, b| (n << 8) | usize::from(*b));
-            remaining = &remaining[length_size..];
-            ensure!(
-                len > 0 && len <= remaining.len(),
-                "Invalid H.264 NAL length"
-            );
-            packet.extend_from_slice(&[0, 0, 0, 1]);
-            packet.extend_from_slice(&remaining[..len]);
-            remaining = &remaining[len..];
-        }
-        if let Some(yuv) = decoder.decode_with_options(&packet, options.clone())? {
-            frames.push(frame(&yuv, &mut allocated)?);
-        }
-    }
-    for yuv in decoder.flush_remaining()? {
-        frames.push(frame(&yuv, &mut allocated)?);
-    }
+    Ok(packet)
+}
+
+fn apply_timing(frames: &mut [Frame], timings: &mut [(i64, u32)], scale: u64) -> Result<()> {
     ensure!(
         frames.len() == timings.len(),
         "MP4 could not be fully decoded"
@@ -198,14 +244,18 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Vec<Frame>> {
     timings.sort_unstable_by_key(|t| t.0);
     let origin = timings[0].0;
     for (index, frame) in frames.iter_mut().enumerate() {
-        let start = timings[index]
-            .0
-            .checked_sub(origin)
-            .context("Invalid MP4 timestamp")? as u64;
-        let end = if let Some(next) = timings.get(index + 1) {
-            next.0
+        let start = u64::try_from(
+            timings[index]
+                .0
                 .checked_sub(origin)
-                .context("Invalid MP4 timestamp")? as u64
+                .context("Invalid MP4 timestamp")?,
+        )?;
+        let end = if let Some(next) = timings.get(index + 1) {
+            u64::try_from(
+                next.0
+                    .checked_sub(origin)
+                    .context("Invalid MP4 timestamp")?,
+            )?
         } else {
             start
                 .checked_add(u64::from(timings[index].1))
@@ -219,7 +269,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Vec<Frame>> {
         );
         frame.millis = end_ms - start_ms;
     }
-    Ok(frames)
+    Ok(())
 }
 
 fn frame(yuv: &DecodedYUV<'_>, allocated: &mut usize) -> Result<Frame> {
@@ -238,8 +288,8 @@ fn frame(yuv: &DecodedYUV<'_>, allocated: &mut usize) -> Result<Frame> {
     yuv.write_rgba8(&mut rgba);
     Ok(Frame {
         rgba,
-        width: width as u32,
-        height: height as u32,
+        width: u32::try_from(width)?,
+        height: u32::try_from(height)?,
         millis: 0,
     })
 }

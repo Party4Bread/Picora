@@ -1,6 +1,6 @@
 //! Compatibility for commit-only Linux IMEs with egui 0.33.
-//! See https://github.com/emilk/egui/issues/7906. Revisit when upgrading egui.
-use super::*;
+//! See <https://github.com/emilk/egui/issues/7906>. Revisit when upgrading egui.
+use super::egui;
 
 pub(super) fn install(ctx: &egui::Context) {
     // eframe's raw_input_hook is skipped for immediate child viewports (the
@@ -22,7 +22,9 @@ fn prepare(ctx: &egui::Context, input_events: &mut Vec<egui::Event>) {
     for event in input_events.drain(..) {
         match &event {
             egui::Event::Ime(egui::ImeEvent::Enabled) => composing = true,
-            egui::Event::Ime(egui::ImeEvent::Disabled) => composing = false,
+            egui::Event::Ime(egui::ImeEvent::Disabled) | egui::Event::WindowFocused(false) => {
+                composing = false;
+            }
             egui::Event::Ime(egui::ImeEvent::Commit(_)) => {
                 // egui-winit ignores Linux Ime::Enabled and normally starts composition
                 // on Preedit. fcitx5 can commit without Preedit. egui 0.33 otherwise
@@ -34,7 +36,6 @@ fn prepare(ctx: &egui::Context, input_events: &mut Vec<egui::Event>) {
                 }
                 composing = false;
             }
-            egui::Event::WindowFocused(false) => composing = false,
             _ => {}
         }
         events.push(event);

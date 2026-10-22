@@ -1,4 +1,12 @@
-use super::*;
+use super::{
+    App, BrowseState, Color32, CopyMode, Duration, Filter, LibrarySticker, Provider, Tab, Vec2,
+    View, egui,
+};
+
+pub(super) struct Thumbnail {
+    pub response: egui::Response,
+    pub activated: bool,
+}
 impl App {
     pub(super) fn thumb(
         &mut self,
@@ -7,7 +15,7 @@ impl App {
         url: &str,
         size: f32,
         selected: bool,
-    ) -> egui::Response {
+    ) -> Thumbnail {
         let response = ui.add(
             egui::Button::new("")
                 .min_size(Vec2::splat(size))
@@ -16,7 +24,10 @@ impl App {
         // Discover lays out all rows. Clipped rows must not start downloads or
         // compete with visible thumbnails for the bounded texture cache.
         if !ui.is_rect_visible(response.rect) {
-            return response;
+            return Thumbnail {
+                response,
+                activated: false,
+            };
         }
         let fill = if selected {
             ui.visuals().selection.bg_fill
@@ -32,6 +43,7 @@ impl App {
         };
         ui.painter()
             .rect(response.rect, 8., fill, stroke, egui::StrokeKind::Inside);
+        let retrying = self.failed.contains_key(url) && !self.visuals.contains_key(url);
         if let Some(v) = self.visuals.get_mut(url) {
             v.last_used = ui.ctx().cumulative_frame_nr();
             if response.hovered()
@@ -40,7 +52,8 @@ impl App {
                 && self.inflight.insert(url.into())
             {
                 // Restore animation on demand while retaining the still on screen.
-                self.services.media(provider, url.into(), true);
+                self.services
+                    .request_media_preview(provider, url.into(), true);
             }
             let frame = if response.hovered() && v.frames.len() > 1 {
                 let (frame, wait) =
@@ -80,48 +93,85 @@ impl App {
                 egui::Stroke::new(1.5_f32, ui.visuals().weak_text_color()),
             );
             if !url.is_empty() && self.inflight.insert(url.into()) {
-                self.services.media(provider, url.into(), false);
+                self.services
+                    .request_media_preview(provider, url.into(), false);
             }
         }
-        response
+        Thumbnail {
+            activated: response.clicked() && !retrying,
+            response,
+        }
     }
-    pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: Vec<LibrarySticker>, picker: bool) {
-        if items.is_empty() {
-            ui.add_space(32.);
-            if !self.search.trim().is_empty() {
-                ui.heading("No matching stickers");
-                ui.label("Try another search or clear it to see this collection.");
-                if ui.button("Clear search").clicked() {
-                    self.search.clear();
-                }
-            } else if self.packs.is_empty() {
-                ui.heading("Your library is empty");
-                ui.label("Browse a pack and add it to your library.");
-                if ui.button("Browse repositories").clicked() {
-                    self.tab = Tab::Browse;
-                    self.open_library();
-                    self.browse();
-                }
-            } else {
-                ui.heading("No stickers in this collection");
-                ui.label("Choose another pack or manage your stickers in the library.");
-                if ui.button("Show all stickers").clicked() {
-                    self.filter = Filter::All;
+    fn browse_state(&self, view: View) -> Option<&BrowseState> {
+        match view {
+            View::Library => Some(&self.library_state),
+            View::Picker => Some(&self.picker_state),
+            _ => None,
+        }
+    }
+    fn browse_state_mut(&mut self, view: View) -> Option<&mut BrowseState> {
+        match view {
+            View::Library => Some(&mut self.library_state),
+            View::Picker => Some(&mut self.picker_state),
+            _ => None,
+        }
+    }
+    fn empty_grid(&mut self, ui: &mut egui::Ui, view: View) {
+        ui.add_space(32.);
+        if self
+            .browse_state(view)
+            .is_some_and(|s| !s.search.trim().is_empty())
+        {
+            ui.heading("No matching stickers");
+            ui.label("Try another search or clear it to see this collection.");
+            if ui.button("Clear search").clicked()
+                && let Some(state) = self.browse_state_mut(view)
+            {
+                state.search.clear();
+            }
+        } else if self.packs.is_empty() {
+            ui.heading("Your library is empty");
+            ui.label("Browse a pack and add it to your library.");
+            if ui.button("Browse repositories").clicked() {
+                self.tab = Tab::Browse;
+                self.open_library();
+                self.browse();
+            }
+        } else {
+            ui.heading("No stickers in this collection");
+            ui.label("Choose another pack or manage your stickers in the library.");
+            if ui.button("Show all stickers").clicked() {
+                if let Some(state) = self.browse_state_mut(view) {
+                    state.filter = Filter::All;
+                } else {
+                    self.tab = Tab::Library;
+                    self.library_state.filter = Filter::All;
                 }
             }
+        }
+    }
+    pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: &[LibrarySticker], view: View) {
+        let picker = view == View::Picker;
+        if items.is_empty() {
+            self.empty_grid(ui, view);
             return;
         }
         let columns = ((ui.available_width() + 8.) / 88.).floor().max(1.) as usize;
         if picker {
-            self.selected = self.selected.min(items.len() - 1);
+            self.picker_state.selected = self.picker_state.selected.min(items.len() - 1);
         }
         let popup_open = egui::Popup::is_any_open(ui.ctx());
         if picker && self.pending.is_none() && !popup_open {
-            self.selected = navigate(ui, self.selected, items.len(), columns);
+            self.picker_state.selected =
+                navigate(ui, self.picker_state.selected, items.len(), columns);
             if ui.input(|i| i.key_pressed(egui::Key::Enter))
                 && !ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Ime(_))))
             {
-                self.choose(items[self.selected].clone(), CopyMode::Auto, true);
+                self.begin_sticker_copy(
+                    items[self.picker_state.selected].clone(),
+                    CopyMode::Auto,
+                    true,
+                );
             }
         }
         let editing_text = ui.ctx().wants_keyboard_input();
@@ -145,7 +195,7 @@ impl App {
         });
         if navigation {
             scroll = scroll.vertical_scroll_offset(
-                (self.selected / columns) as f32 * (80. + ui.spacing().item_spacing.y),
+                (self.picker_state.selected / columns) as f32 * (80. + ui.spacing().item_spacing.y),
             );
         }
         scroll.show_rows(ui, 80., items.len().div_ceil(columns), |ui, rows| {
@@ -162,19 +212,27 @@ impl App {
                                     item.provider,
                                     &item.sticker.url,
                                     80.,
-                                    picker && n == self.selected,
+                                    picker && n == self.picker_state.selected,
                                 );
-                                r.clone().on_hover_text(format!(
+                                r.response.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::WidgetType::Button,
+                                        true,
+                                        &item.sticker.label,
+                                    )
+                                });
+                                r.response.clone().on_hover_text(format!(
                                     "{}\n{} · {}\nRight-click for more",
                                     item.sticker.label, item.pack_title, item.provider
                                 ));
-                                if r.clicked() {
+                                if r.activated {
                                     if picker {
-                                        self.selected = n;
+                                        self.picker_state.selected = n;
                                     }
-                                    self.choose(item.clone(), CopyMode::Auto, picker);
+                                    self.begin_sticker_copy(item.clone(), CopyMode::Auto, picker);
                                 }
-                                r.context_menu(|ui| self.sticker_menu(ui, item, picker));
+                                r.response
+                                    .context_menu(|ui| self.sticker_menu(ui, item, view));
                             });
                         });
                     }
@@ -182,19 +240,19 @@ impl App {
             }
         });
     }
-    fn sticker_menu(&mut self, ui: &mut egui::Ui, item: &LibrarySticker, picker: bool) {
+    fn sticker_menu(&mut self, ui: &mut egui::Ui, item: &LibrarySticker, view: View) {
         if ui.button("Copy still image").clicked() {
-            self.choose(item.clone(), CopyMode::Still, false);
+            self.begin_sticker_copy(item.clone(), CopyMode::Still, false);
             ui.close();
         }
         if ui.button("Paste original file").clicked() {
-            self.choose(item.clone(), CopyMode::Original, picker);
+            self.begin_sticker_copy(item.clone(), CopyMode::Original, view == View::Picker);
             ui.close();
         }
         ui.separator();
         let favorite = match self
             .store
-            .sticker_favorite(&item.pack_key, &item.sticker.id)
+            .is_sticker_favorite(&item.pack_key, &item.sticker.id)
         {
             Ok(Some(value)) => value,
             Ok(None) => {
@@ -214,9 +272,9 @@ impl App {
             })
             .clicked()
         {
-            let result = self
-                .store
-                .favorite_sticker(&item.pack_key, &item.sticker.id, !favorite);
+            let result =
+                self.store
+                    .set_sticker_favorite(&item.pack_key, &item.sticker.id, !favorite);
             self.report(result, "Sticker favorite updated");
             ui.close();
         }
@@ -250,7 +308,16 @@ impl App {
                 ui.close();
             }
         }
-        if let Filter::Group(id) = self.filter {
+        let group = match view {
+            View::Group(id) => Some(id),
+            _ => self
+                .browse_state(view)
+                .and_then(|state| match state.filter {
+                    Filter::Group(id) => Some(id),
+                    _ => None,
+                }),
+        };
+        if let Some(id) = group {
             if ui.button("Move earlier").clicked() {
                 let r = self
                     .store

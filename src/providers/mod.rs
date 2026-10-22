@@ -2,7 +2,6 @@ pub mod arca;
 pub mod dcinside;
 use crate::model::{Pack, PackRef, Provider};
 use anyhow::{Context, Result, bail, ensure};
-use async_trait::async_trait;
 use reqwest::{
     Client, StatusCode,
     cookie::{CookieStore, Jar},
@@ -10,12 +9,7 @@ use reqwest::{
 use std::{sync::Arc, time::Duration};
 use url::Url;
 
-pub const MAX_DOWNLOAD: usize = 25 * 1024 * 1024;
-#[async_trait]
-pub trait StickerProvider {
-    async fn browse(&self, query: &str, page: u32) -> Result<Vec<Pack>>;
-    async fn pack(&self, reference: &PackRef) -> Result<Pack>;
-}
+use crate::media::MAX_ASSET_BYTES;
 #[derive(Clone)]
 pub struct Repository {
     pub(crate) client: Client,
@@ -23,6 +17,8 @@ pub struct Repository {
     pub provider: Provider,
 }
 impl Repository {
+    /// # Errors
+    /// Returns an error if the HTTP client cannot initialize.
     pub fn new(provider: Provider) -> Result<Self> {
         let jar = Arc::new(Jar::default());
         let client = Client::builder()
@@ -59,6 +55,8 @@ impl Repository {
             .split(';')
             .find_map(|c| c.trim().strip_prefix(&format!("{key}=")).map(str::to_owned))
     }
+    /// # Errors
+    /// Rejects unsupported image hosts and redirects, unsuccessful responses, and downloads exceeding the asset limit.
     pub async fn bytes(&self, url: &str) -> Result<Vec<u8>> {
         let parsed = Url::parse(url)?;
         ensure!(allowed_url(&parsed), "Unsupported sticker asset host");
@@ -75,6 +73,7 @@ impl Repository {
         String::from_utf8(bytes).context("Repository returned invalid text")
     }
 }
+#[must_use]
 pub fn allowed_url(url: &Url) -> bool {
     url.scheme() == "https"
         && url.username().is_empty()
@@ -96,31 +95,39 @@ pub(crate) async fn read_response(mut response: reqwest::Response) -> Result<Vec
         }
         _ => {
             response.error_for_status_ref()?;
+            ensure!(
+                response.status().is_success(),
+                "Unexpected repository response: {}",
+                response.status()
+            );
         }
     }
     ensure!(
-        response.content_length().unwrap_or(0) <= MAX_DOWNLOAD as u64,
+        response.content_length().unwrap_or(0) <= MAX_ASSET_BYTES as u64,
         "Download exceeds 25 MiB"
     );
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await? {
         ensure!(
-            bytes.len() + chunk.len() <= MAX_DOWNLOAD,
+            bytes.len() + chunk.len() <= MAX_ASSET_BYTES,
             "Download exceeds 25 MiB"
         );
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
 }
-#[async_trait]
-impl StickerProvider for Repository {
-    async fn browse(&self, query: &str, page: u32) -> Result<Vec<Pack>> {
+impl Repository {
+    /// # Errors
+    /// Returns an error on network, access-challenge, or catalog parsing failures.
+    pub async fn browse(&self, query: &str, page: u32) -> Result<Vec<Pack>> {
         match self.provider {
             Provider::Dcinside => dcinside::browse(self, query, page).await,
             Provider::Arca => arca::browse(self, query, page).await,
         }
     }
-    async fn pack(&self, r: &PackRef) -> Result<Pack> {
+    /// # Errors
+    /// Rejects mismatched repository references and reports network, access-challenge, or pack parsing failures.
+    pub async fn pack(&self, r: &PackRef) -> Result<Pack> {
         ensure!(r.provider == self.provider, "Wrong repository");
         match self.provider {
             Provider::Dcinside => dcinside::detail(self, r).await,
@@ -128,3 +135,11 @@ impl StickerProvider for Repository {
         }
     }
 }
+
+fn selector(css: &str) -> Result<scraper::Selector> {
+    scraper::Selector::parse(css)
+        .map_err(|error| anyhow::anyhow!("Invalid repository selector {css}: {error}"))
+}
+
+#[cfg(test)]
+mod tests;

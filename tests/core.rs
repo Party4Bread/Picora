@@ -39,7 +39,7 @@ fn favorite_is_durable_before_any_media_download() {
     let store = Store::open(&path).unwrap();
     assert!(store.packs().unwrap()[0].favorite);
     assert_eq!(store.packs().unwrap()[0].pack.stickers.len(), 2);
-    store.favorite(&p.reference.key(), false).unwrap();
+    store.set_pack_favorite(&p.reference.key(), false).unwrap();
     store.save_pack(&p).unwrap();
     assert!(!store.packs().unwrap()[0].favorite);
 }
@@ -74,7 +74,7 @@ fn imports_are_idempotent_and_groups_survive_reopen() {
     let p = pack();
     store.save_pack(&p).unwrap();
     store.save_pack(&p).unwrap();
-    store.favorite(&p.reference.key(), true).unwrap();
+    store.set_pack_favorite(&p.reference.key(), true).unwrap();
     let group = store.create_group("Reactions").unwrap();
     for id in ["a", "b", "a"] {
         store.add_to_group(group, &p.reference.key(), id).unwrap();
@@ -167,7 +167,9 @@ fn individual_favorites_override_pack_and_survive_refresh() {
     let store = Store::open_in_memory().unwrap();
     let p = pack();
     store.save_favorite_pack(&p).unwrap();
-    store.favorite_sticker("dcinside:42", "a", false).unwrap();
+    store
+        .set_sticker_favorite("dcinside:42", "a", false)
+        .unwrap();
     store.save_favorite_pack(&p).unwrap();
     assert_eq!(
         store
@@ -178,8 +180,10 @@ fn individual_favorites_override_pack_and_survive_refresh() {
             .collect::<Vec<_>>(),
         ["b"]
     );
-    store.favorite("dcinside:42", false).unwrap();
-    store.favorite_sticker("dcinside:42", "a", true).unwrap();
+    store.set_pack_favorite("dcinside:42", false).unwrap();
+    store
+        .set_sticker_favorite("dcinside:42", "a", true)
+        .unwrap();
     assert_eq!(
         store
             .favorite_items()
@@ -191,7 +195,7 @@ fn individual_favorites_override_pack_and_survive_refresh() {
     );
     assert!(
         store
-            .favorite_sticker("dcinside:42", "missing", true)
+            .set_sticker_favorite("dcinside:42", "missing", true)
             .is_err()
     );
 }
@@ -239,7 +243,9 @@ fn reopening_after_old_binary_does_not_repeat_column_migrations() {
     {
         let store = Store::open(&path).unwrap();
         store.save_favorite_pack(&pack()).unwrap();
-        store.favorite_sticker("dcinside:42", "a", false).unwrap();
+        store
+            .set_sticker_favorite("dcinside:42", "a", false)
+            .unwrap();
     }
     // v0.1.0/early v0.1.1 reset this marker whenever they open a database.
     let conn = rusqlite::Connection::open(&path).unwrap();
@@ -249,4 +255,51 @@ fn reopening_after_old_binary_does_not_repeat_column_migrations() {
     assert_eq!(store.packs().unwrap().len(), 1);
     assert_eq!(store.favorite_items().unwrap().len(), 1);
     assert_eq!(store.recents().unwrap().len(), 2);
+}
+
+#[test]
+fn updates_require_existing_records_and_removals_are_idempotent() {
+    let store = Store::open_in_memory().unwrap();
+    assert!(store.set_pack_favorite("missing", true).is_err());
+    assert!(
+        store
+            .set_sticker_favorite("missing", "missing", true)
+            .is_err()
+    );
+    assert!(store.rename_group(42, "name").is_err());
+    store.remove_pack("missing").unwrap();
+    store.delete_group(42).unwrap();
+    store.remove_from_group(42, "missing", "missing").unwrap();
+    let group = store.create_group("old").unwrap();
+    store.rename_group(group, "new").unwrap();
+    assert_eq!(store.groups().unwrap()[0].name, "new");
+}
+
+#[test]
+fn theme_settings_preserve_existing_values_and_normalize_unknown_values() {
+    use eframe::egui::ThemePreference;
+    use picora::model::Settings;
+    for (saved, expected) in [
+        ("System", ThemePreference::System),
+        ("Light", ThemePreference::Light),
+        ("Dark", ThemePreference::Dark),
+        ("unsupported", ThemePreference::System),
+    ] {
+        let settings: Settings =
+            serde_json::from_value(serde_json::json!({"theme": saved})).unwrap();
+        assert_eq!(settings.theme, expected);
+        let value = serde_json::to_value(settings).unwrap();
+        assert_eq!(
+            value["theme"],
+            if saved == "unsupported" {
+                "System"
+            } else {
+                saved
+            }
+        );
+    }
+    assert_eq!(
+        serde_json::from_str::<Settings>("{}").unwrap().theme,
+        ThemePreference::System
+    );
 }

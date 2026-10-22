@@ -1,4 +1,4 @@
-use super::*;
+use super::{App, egui};
 use crate::update::{controller::State, release::REPOSITORY};
 impl App {
     pub(super) fn updates_ui(&mut self, ui: &mut egui::Ui) {
