@@ -29,6 +29,8 @@ pub(super) struct Panel {
     generation: u64,
     loading: bool,
     copying: bool,
+    copy_generation: u64,
+    copy_task: Option<JoinHandle<()>>,
     status: String,
     details: Option<String>,
     error: bool,
@@ -56,6 +58,8 @@ impl Default for Panel {
             generation: 0,
             loading: false,
             copying: false,
+            copy_generation: 0,
+            copy_task: None,
             status: String::new(),
             details: None,
             error: false,
@@ -99,7 +103,25 @@ impl Panel {
             .err()
             .map_or_else(|| success.into(), |e| e.to_string());
     }
+    fn cancel_copy(&mut self) {
+        self.copy_generation += 1;
+        if let Some(task) = self.copy_task.take() {
+            task.abort();
+        }
+        self.copying = false;
+    }
+    fn copy_link(&mut self, ctx: &egui::Context, url: Result<String>) {
+        self.cancel_copy();
+        match url {
+            Ok(url) => {
+                ctx.copy_text(url);
+                self.message(Ok(()), "GIF link copied. Paste it in your chat.");
+            }
+            Err(error) => self.message(Err(error), ""),
+        }
+    }
     fn clear_results(&mut self) {
+        self.cancel_copy();
         self.generation += 1;
         if let Some(task) = self.search.take() {
             task.abort();
@@ -225,7 +247,7 @@ impl Panel {
                         }
                     }
                 }
-                Event::Copy(id, result) if id == self.generation => {
+                Event::Copy(id, result) if id == self.copy_generation => {
                     self.copying = false;
                     match result {
                         Ok(image) => {
@@ -414,6 +436,7 @@ impl Panel {
                 .weak(),
         );
         let mut copy = None;
+        let mut link = None;
         egui::ScrollArea::vertical()
             .id_salt("giphy-results")
             .show(ui, |ui| {
@@ -454,18 +477,7 @@ impl Panel {
                                         Some(tile.item.image("original_still").map(str::to_owned));
                                 }
                                 if ui.button("Copy GIF link").clicked() {
-                                    match tile.item.image("original") {
-                                        Ok(url) => {
-                                            ui.ctx().copy_text(url.into());
-                                            self.status =
-                                                "GIF link copied. Paste it in your chat.".into();
-                                            self.error = false;
-                                        }
-                                        Err(error) => {
-                                            self.status = format!("{error:#}");
-                                            self.error = true;
-                                        }
-                                    }
+                                    link = Some(tile.item.image("original").map(str::to_owned));
                                 }
                                 ui.hyperlink_to("View on GIPHY", &tile.item.url);
                             },
@@ -473,10 +485,13 @@ impl Panel {
                     }
                 });
             });
-        if let Some(url) = copy {
+        if let Some(url) = link {
+            self.copy_link(ui.ctx(), url);
+        } else if let Some(url) = copy {
+            self.cancel_copy();
             self.copying = true;
-            let (tx, ctx, id) = (self.tx.clone(), ui.ctx().clone(), self.generation);
-            runtime.spawn(async move {
+            let (tx, ctx, id) = (self.tx.clone(), ui.ctx().clone(), self.copy_generation);
+            self.copy_task = Some(runtime.spawn(async move {
                 let result = async {
                     let bytes = Giphy::new()?.image(&url?).await?;
                     tokio::task::spawn_blocking(move || color_image(&bytes, false)).await?
@@ -484,7 +499,7 @@ impl Panel {
                 .await;
                 let _ = tx.send(Event::Copy(id, result));
                 ctx.request_repaint();
-            });
+            }));
         }
     }
 }
@@ -505,7 +520,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut panel = Panel::default();
         panel.copying = true;
-        let old = panel.generation;
+        let old = panel.copy_generation;
         panel.clear_results();
         let pixel = || egui::ColorImage::filled([1, 1], egui::Color32::RED);
         panel.tx.send(Event::Copy(old, Ok(pixel()))).unwrap();
@@ -519,11 +534,28 @@ mod tests {
         );
         panel
             .tx
-            .send(Event::Copy(panel.generation, Ok(pixel())))
+            .send(Event::Copy(panel.copy_generation, Ok(pixel())))
             .unwrap();
         let output = ctx.run(Default::default(), |ctx| panel.poll(runtime.handle(), ctx));
         assert!(
             output
+                .platform_output
+                .commands
+                .iter()
+                .any(|command| matches!(command, egui::OutputCommand::CopyImage(_)))
+        );
+        assert!(!panel.copying);
+        let pending = panel.copy_generation;
+        panel.copying = true;
+        let output = ctx.run(Default::default(), |ctx| {
+            panel.copy_link(ctx, Ok("https://media.giphy.com/cat.gif".into()));
+            panel.tx.send(Event::Copy(pending, Ok(pixel()))).unwrap();
+            panel.poll(runtime.handle(), ctx);
+        });
+        assert!(output.platform_output.commands.iter().any(|command|
+            matches!(command, egui::OutputCommand::CopyText(text) if text.ends_with("cat.gif"))));
+        assert!(
+            !output
                 .platform_output
                 .commands
                 .iter()

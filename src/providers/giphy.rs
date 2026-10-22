@@ -21,6 +21,7 @@ impl Kind {
 }
 #[derive(Clone, Deserialize)]
 pub struct Rendition {
+    #[serde(default)]
     pub url: String,
 }
 #[derive(Clone, Deserialize)]
@@ -169,6 +170,28 @@ async fn response_bytes(mut response: reqwest::Response, limit: usize) -> Result
 mod tests {
     use super::*;
     use crate::providers::tests::response;
+
+    #[test]
+    fn search_accepts_video_only_renditions_alongside_images() {
+        let page: Page = serde_json::from_value(serde_json::json!({
+            "data": [{
+                "id": "cat", "url": "https://giphy.com/gifs/cat",
+                "images": {
+                    "original": {"url": "https://media.giphy.com/cat.gif?cid=example"},
+                    "looping": {"mp4": "https://media.giphy.com/cat.mp4"},
+                    "preview": {"mp4": "https://media.giphy.com/preview.mp4"},
+                    "downsized_small": {"mp4": "https://media.giphy.com/small.mp4"}
+                }
+            }],
+            "pagination": {"total_count": 1, "count": 1, "offset": 0}
+        }))
+        .unwrap();
+        assert_eq!(
+            page.data[0].image("original").unwrap(),
+            "https://media.giphy.com/cat.gif?cid=example"
+        );
+        assert!(page.data[0].image("looping").is_err());
+    }
 
     #[tokio::test]
     async fn api_boundaries_reject_auth_errors_redirects_and_oversized_bodies() {
