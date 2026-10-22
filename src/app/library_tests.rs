@@ -1158,3 +1158,30 @@ fn synchronous_reports_preserve_causes_and_clear_errors_after_success() {
     assert!(!app.error);
     assert_eq!(app.status, "Signed out");
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn repaint_does_not_take_native_focus_back_from_library() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), runtime.handle().clone(), &ctx);
+    let mut frame = eframe::Frame::_new_kittest();
+    for picker_open in [true, false] {
+        app.picker_open = picker_open;
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            eframe::App::update(&mut app, ctx, &mut frame);
+        });
+        let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+        assert!(
+            !commands.iter().any(|cmd| matches!(
+                cmd,
+                egui::ViewportCommand::Visible(_) | egui::ViewportCommand::Focus
+            )),
+            "a repaint must not change native visibility or focus: {commands:?}"
+        );
+    }
+}

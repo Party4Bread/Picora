@@ -230,6 +230,10 @@ impl App {
                 );
             }
         }
+        ctx.send_viewport_cmd_to(
+            egui::ViewportId::ROOT,
+            egui::ViewportCommand::Visible(app.picker_open),
+        );
         Ok(app)
     }
     fn message(&mut self, s: impl Into<String>, error: bool) {
@@ -365,7 +369,10 @@ impl App {
     }
     fn set_picker_hidden(&mut self, ctx: &egui::Context) {
         self.picker_open = false;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        ctx.send_viewport_cmd_to(
+            egui::ViewportId::ROOT,
+            egui::ViewportCommand::Visible(false),
+        );
     }
     fn open_library(&mut self) {
         self.services.bus.ctx.send_viewport_cmd_to(
@@ -709,7 +716,6 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.hide_picker(ctx);
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.picker_open));
         if self.picker_open {
             self.picker(ctx);
         }
