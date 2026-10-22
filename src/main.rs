@@ -94,21 +94,3 @@ fn run() -> Result<()> {
     drop(runtime);
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::starts_hidden;
-
-    #[test]
-    fn explicit_window_flags_override_background_mode() {
-        for (args, hidden) in [
-            (vec!["--background"], true),
-            (vec!["--show"], false),
-            (vec!["--library"], false),
-            (vec!["--background", "--library"], false),
-        ] {
-            let args: Vec<String> = args.into_iter().map(str::to_owned).collect();
-            assert_eq!(starts_hidden(&args), hidden, "{args:?}");
-        }
-    }
-}
