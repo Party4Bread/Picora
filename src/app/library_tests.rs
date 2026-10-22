@@ -34,9 +34,15 @@ fn macos_permission_panel_distinguishes_allowed_and_denied_without_prompting() {
         let output = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| app.macos_permissions_ui(ui, allowed));
         });
-        assert_eq!(label(&output, "Allow automatic paste…").is_some(), !allowed);
-        assert!(label(&output, "Check permission again").is_some());
-        assert!(label(&output, "Open Accessibility settings").is_some());
+        assert_eq!(
+            label(&output, "Open Accessibility settings").is_some(),
+            !allowed
+        );
+        assert_eq!(
+            label(&output, "Use manual paste instead").is_some(),
+            !allowed
+        );
+        assert_eq!(label(&output, "Back to my library").is_some(), allowed);
     }
 }
 
@@ -59,6 +65,7 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
     )
     .unwrap();
     App {
+        giphy: super::giphy::Panel::default(),
         updates: crate::update::controller::Controller::default(),
         update_health_sent: false,
         packs: store.packs().unwrap(),
@@ -1167,4 +1174,44 @@ fn repaint_does_not_take_native_focus_back_from_library() {
             "a repaint must not change native visibility or focus: {commands:?}"
         );
     }
+}
+
+#[test]
+fn update_notice_opens_settings_without_starting_download_or_pasting() {
+    use crate::update::{
+        controller::State,
+        release::{AvailableUpdate, ReleaseAsset, Target},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), runtime.handle().clone(), &ctx);
+    app.updates.state = State::Available(AvailableUpdate {
+        version: "99.0.0".into(),
+        notes: "Update notes".into(),
+        asset: ReleaseAsset {
+            target: Target::current().unwrap(),
+            name: "test.zip".into(),
+            size: 1,
+            sha256: "0".repeat(64),
+        },
+        url: "https://invalid.example/test.zip".into(),
+    });
+    app.picker_open = true;
+    let ticket = app.services.paste_ticket();
+    app.paste_at = Some((Instant::now(), Target(0), None));
+    let output = frame(&mut app, &ctx, vec![]);
+    let button =
+        label(&output, "Update available · 99.0.0").expect("update is visible outside Settings");
+    click(&mut app, &ctx, button);
+    assert!(app.tab == Tab::Settings);
+    assert!(app.library_open);
+    assert!(!app.picker_open);
+    assert!(!ticket.valid());
+    assert!(app.paste_at.is_none());
+    assert!(matches!(app.updates.state, State::Available(_)));
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Update and restart").is_some());
 }

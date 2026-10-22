@@ -1,5 +1,6 @@
 mod design;
 mod events;
+mod giphy;
 mod grid;
 #[cfg(target_os = "linux")]
 mod ime;
@@ -57,6 +58,7 @@ enum View {
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Library,
+    Giphy,
     Browse,
     Groups,
     Accounts,
@@ -77,6 +79,7 @@ struct PendingPaste {
     from_picker: bool,
 }
 pub struct App {
+    giphy: giphy::Panel,
     updates: crate::update::controller::Controller,
     update_health_sent: bool,
     store: Store,
@@ -163,6 +166,7 @@ impl App {
             bus,
         )?;
         let mut app = Self {
+            giphy: giphy::Panel::default(),
             updates: crate::update::controller::Controller::default(),
             update_health_sent: false,
             packs: store.packs()?,
@@ -622,6 +626,7 @@ impl App {
                         }
                     });
                 });
+                self.update_notice(ui);
                 #[cfg(target_os = "macos")]
                 if self.settings.auto_paste
                     && !platform::macos_permissions::accessibility_allowed()
@@ -708,6 +713,7 @@ impl eframe::App for App {
             self.pending = None;
         }
         self.handle_events(ctx);
+        self.giphy.poll(&self.services.runtime, ctx);
         if self.quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;

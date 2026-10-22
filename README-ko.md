@@ -25,6 +25,9 @@ Windows 이모지 패널처럼 **Ctrl+Shift+Space**로 Picora를 열 수 있습�
 | --- | --- | --- |
 | [디시인사이드](https://dccon.dcinside.com/) | 팩 검색 또는 팩 URL로 가져오기 | 필요 없음 |
 | [아카라이브(arca.live)](https://arca.live/e/) | 팩 검색 또는 팩 URL로 가져오기 | 필요하며, 웹사이트 인증이 표시될 수 있음 |
+| [GIPHY](https://giphy.com/) | 온라인 GIF·스티커 검색, 정지 이미지 또는 GIF 링크 복사 | 개인 GIPHY API 키 |
+
+GIPHY는 **Library → GIPHY**에서 개인 API 키를 입력한 후 **Use and save key**로 설정합니다. 키는 운영체제의 보안 저장소에 보관됩니다. GIPHY 검색 결과는 오프라인 팩과 분리되며, 이미지를 라이브러리 캐시에 저장하지 않습니다. 요청 한도는 API 요금제에 따라 다릅니다. 표시되는 로고는 [GIPHY 공식 표시 자료](https://media.giphy.com/giphy-attribution-marks.zip)입니다.
 
 ## 다운로드 및 설치
 

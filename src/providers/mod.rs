@@ -1,5 +1,6 @@
 pub mod arca;
 pub mod dcinside;
+pub mod giphy;
 use crate::model::{Pack, PackRef, Provider};
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::{

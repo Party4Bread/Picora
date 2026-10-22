@@ -1,6 +1,20 @@
 use super::{App, egui};
 use crate::update::{controller::State, release::REPOSITORY};
 impl App {
+    pub(super) fn update_notice(&mut self, ui: &mut egui::Ui) {
+        let State::Available(update) = &self.updates.state else {
+            return;
+        };
+        if ui
+            .button(format!("Update available · {}", update.version))
+            .clicked()
+        {
+            self.hide_picker(ui.ctx());
+            self.open_library();
+            self.tab = super::Tab::Settings;
+        }
+    }
+
     pub(super) fn updates_ui(&mut self, ui: &mut egui::Ui) {
         ui.separator();
         ui.heading("Updates");

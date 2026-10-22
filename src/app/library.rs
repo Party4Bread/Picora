@@ -67,10 +67,12 @@ impl App {
                 ui.spacing_mut().item_spacing.y = 4.;
                 ui.add_space(4.);
                 ui.label(RichText::new("Picora").size(23.).strong());
+                self.update_notice(ui);
                 ui.add_space(8.);
                 for (label, tab) in [
                     ("My library", Tab::Library),
                     ("Discover", Tab::Browse),
+                    ("GIPHY", Tab::Giphy),
                     ("Groups", Tab::Groups),
                 ] {
                     let selected = self.tab == tab
@@ -121,6 +123,7 @@ impl App {
             .show(ctx, |ui| match self.tab {
                 Tab::Library => self.library_content(ui),
                 Tab::Browse => self.discover(ui),
+                Tab::Giphy => self.giphy.show(ui, &self.services.runtime),
                 Tab::Groups => self.groups_ui(ui),
                 Tab::Accounts => self.accounts(ui),
                 Tab::Settings => {
@@ -426,7 +429,7 @@ impl App {
                     "Complete sign-in in the arca.live window, then close it",
                     false,
                 );
-                self.services.login();
+                self.services.login(true);
             }
             if ui
                 .add_enabled(
@@ -447,6 +450,14 @@ impl App {
             {
                 let r = self.services.logout();
                 self.report(r, "arca.live session removed");
+            }
+        });
+        ui.collapsing("Trouble signing in?", |ui| {
+            ui.label("If the website reports a CSRF error or keeps returning to sign-in, try a fresh sign-in window. Your saved session stays in place until a new sign-in finishes.");
+            if ui.add_enabled(!self.login_busy, egui::Button::new("Open fresh sign-in window")).clicked() {
+                self.login_busy = true;
+                self.message("Sign in again in the new window, then close it to reconnect.", false);
+                self.services.login(false);
             }
         });
     }
@@ -543,38 +554,41 @@ impl App {
 
     #[cfg(target_os = "macos")]
     pub(super) fn macos_permissions_ui(&mut self, ui: &mut egui::Ui, allowed: bool) {
-        ui.add_space(12.);
-        ui.strong("Automatic paste on macOS");
-        ui.label(if allowed {
-            "Allowed — automatic paste has Accessibility access."
-        } else {
-            "Permission needed for automatic paste. Copying stickers works without it."
-        });
-        ui.label("Enable the copy of Picora you are running. Moving or updating the app may require granting access again.");
-        ui.horizontal_wrapped(|ui| {
-            if !allowed && ui.button("Allow automatic paste…").clicked() {
-                platform::macos_permissions::request_accessibility();
+        egui::Frame::group(ui.style()).inner_margin(16.).show(ui, |ui| {
+            ui.heading(if allowed { "Automatic paste is ready" } else { "Enable automatic paste" });
+            if allowed {
+                ui.label("Permission is enabled. Switch to your chat, open Picora, and choose the sticker again.");
+                ui.label("The previous sticker will not be pasted automatically.");
+                if ui.button("Back to my library").clicked() {
+                    self.tab = Tab::Library;
+                }
+                return;
+            }
+            ui.label("Your sticker is copied. You can paste it now with Cmd+V, or finish setup below.");
+            ui.add_space(8.);
+            ui.label("1. Open Accessibility settings using the button below.");
+            ui.label("2. Turn on Picora in the app list. If it is missing, click + and select Picora.app in Applications.");
+            ui.label("3. Return to Picora. This panel checks permission automatically.");
+            ui.add_space(8.);
+            if ui.button("Open Accessibility settings").clicked() {
                 self.cancel_auto_paste();
-                self.message("Enable Picora in System Settings → Privacy & Security → Accessibility, then return here. Choose the sticker again after granting access.", false);
+                platform::macos_permissions::request_accessibility();
                 if let Err(error) = platform::macos_permissions::open_settings() {
                     self.message(format!("Could not open System Settings: {error}. Open Privacy & Security → Accessibility manually."), true);
                 }
             }
-            if ui.button("Open Accessibility settings").clicked()
-                && let Err(error) = platform::macos_permissions::open_settings() {
-                self.message(format!("Could not open System Settings: {error}. Open Privacy & Security → Accessibility manually."), true);
-            }
-            if ui.button("Check permission again").clicked() {
+            ui.collapsing("Picora is already enabled, but it still does not work", |ui| {
+                ui.label("After an update, macOS may still remember the previous copy. Remove Picora from the Accessibility list with −, add the current Picora.app with +, and turn it on. Then quit and reopen Picora.");
+                ui.label("Keep Picora in Applications. If you run it from source, macOS may list your terminal or launcher instead.");
+            });
+            if ui.button("Use manual paste instead").clicked() {
                 self.cancel_auto_paste();
-                self.message(if platform::macos_permissions::accessibility_allowed() {
-                    "Accessibility is allowed. Return to your editor and choose the sticker again."
-                } else {
-                    "Accessibility is still unavailable. Enable this copy of Picora; if it is already enabled, quit and reopen Picora, then check again. You can still paste manually with Cmd+V."
-                }, false);
+                self.settings.auto_paste = false;
+                let result = self.store.save_settings(&self.settings);
+                self.report(result, "Automatic paste is off. Copy a sticker, then press Cmd+V in your chat.");
             }
         });
-        if !allowed {
-            ui.label("Running from source? macOS may list the terminal or launcher instead.");
-        }
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs(1));
     }
 }

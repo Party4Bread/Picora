@@ -24,7 +24,10 @@ These are Picora’s currently supported sources. Your stickers are organized to
 | Repository | Browse and import | Sign-in |
 | --- | --- | --- |
 | [DCInside](https://dccon.dcinside.com/) | Search packs or import by pack URL | Not required |
-| [arca.live](https://arca.live/e/) | Search packs or import by pack URL | Required; website verification may be requested |
+| [arca.live (아카라이브)](https://arca.live/e/) | Search packs or import by pack URL | Required; website verification may be requested |
+| [GIPHY](https://giphy.com/) | Online GIF/sticker search; copy a still image or GIF link | Your own GIPHY API key |
+
+GIPHY: open **Library → GIPHY**, enter your API key, and choose **Use and save key**. Keys use OS-protected storage. GIPHY results stay separate from offline packs; media is not saved to the library cache. Request limits depend on your API plan. The bundled attribution marks come from [GIPHY's official attribution kit](https://media.giphy.com/giphy-attribution-marks.zip).
 
 ## Download and install
 
