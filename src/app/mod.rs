@@ -360,9 +360,10 @@ impl App {
         self.focus_search = true;
         #[cfg(target_os = "macos")]
         if let Err(error) = focus::activate_current_app() {
+            eprintln!("Could not focus the sticker window: {error:#}");
             self.message(
-                format!("Could not activate Picora: {error}. Click the picker to search."),
-                true,
+                "Click the sticker window to start typing. If it is hidden, choose Open picker from Picora’s menu bar icon.",
+                false,
             );
         }
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Visible(true));
