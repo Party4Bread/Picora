@@ -143,7 +143,7 @@ python scripts/smoke_wayland_clipboard.py
 
 패키징과 설치 프로그램 스크립트는 CI에서 사용합니다. `test_update_manifest.py`는 릴리스 메타데이터를 검증하고, `tests/update_process.rs`는 `cargo test`의 일부로 업데이트 교체와 복구 시나리오를 실행합니다. 플랫폼별 검증 스크립트는 화면 없는 CI에서 확인할 수 없는 데스크톱 동작을 검사합니다. [릴리스와 복구 문서](docs/UPDATES.md)도 참고하세요.
 
-Linux 압축 파일에는 선택적으로 설치할 수 있는 데스크톱 연동 파일이 포함되어 있습니다. 실행 파일을 `PATH`에 등록하고, 데스크톱 항목을 `~/.local/share/applications/`에, 아이콘을 `~/.local/share/icons/hicolor/scalable/apps/`에 설치하세요.
+Linux 압축 파일에는 데스크톱 연동 파일이 포함되어 있습니다. 최신 Wayland 포털에서 전역 단축키를 등록하려면 Picora를 식별할 데스크톱 항목이 필요합니다. 실행 파일을 `PATH`에 등록하고, 데스크톱 항목을 `~/.local/share/applications/`에, 아이콘을 `~/.local/share/icons/hicolor/scalable/apps/`에 설치하세요.
 
 ## 프로젝트
 

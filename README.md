@@ -143,7 +143,7 @@ The arca.live check uses your saved session. Windows viewport tests need an inte
 
 Packaging and installer scripts are used by CI. `test_update_manifest.py` validates release metadata; `tests/update_process.rs` runs updater replacement and recovery scenarios as part of `cargo test`. Platform smoke scripts cover desktop behavior that headless CI cannot exercise. See [release and recovery documentation](docs/UPDATES.md).
 
-On Linux, optional desktop integration files are included in the archive. Put the binary on `PATH`, install the desktop entry to `~/.local/share/applications/`, and the icon to `~/.local/share/icons/hicolor/scalable/apps/`.
+On Linux, desktop integration files are included in the archive. Recent Wayland portals require the desktop entry to identify Picora when registering global shortcuts. Put the binary on `PATH`, install the desktop entry to `~/.local/share/applications/`, and the icon to `~/.local/share/icons/hicolor/scalable/apps/`.
 
 ## Project
 

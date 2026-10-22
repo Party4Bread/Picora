@@ -323,6 +323,7 @@ impl App {
                 }
             }
             Err(error) => {
+                eprintln!("Shortcut unavailable: {error:#}");
                 self.shortcut_status = format!("{error:#}");
                 self.message(format!("Shortcut unavailable: {error:#}"), true);
             }
