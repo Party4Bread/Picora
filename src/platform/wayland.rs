@@ -13,6 +13,22 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 
+async fn register_application() -> Result<()> {
+    static REGISTERED: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+    REGISTERED
+        .get_or_try_init(|| async {
+            match ashpd::register_host_app("app.picora.desktop".parse()?).await {
+                Ok(()) => Ok(()),
+                // Older portals identify host applications through their desktop launcher.
+                Err(ashpd::Error::PortalNotFound(_)) => Ok(()),
+                Err(error) => Err(anyhow::Error::from(error)
+                    .context("Could not identify Picora to the desktop portal")),
+            }
+        })
+        .await?;
+    Ok(())
+}
+
 enum Command {
     Copy {
         asset: Asset,
@@ -29,6 +45,7 @@ impl Wayland {
     /// # Errors
     /// Returns an error if the portal cannot create or start an authorized remote-desktop session.
     pub async fn connect(restore_token: Option<&str>) -> Result<(Self, Option<String>)> {
+        register_application().await?;
         let remote = RemoteDesktop::new()
             .await
             .context("Desktop does not offer the Remote Desktop portal")?;
@@ -163,6 +180,7 @@ pub async fn shortcuts(
     ready: impl FnOnce() + Send + 'static,
     activate: impl Fn() + Send + 'static,
 ) -> Result<()> {
+    register_application().await?;
     let proxy = GlobalShortcuts::new()
         .await
         .context("No shortcut portal; bind `picora --show` in desktop settings")?;

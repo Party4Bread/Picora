@@ -1,7 +1,7 @@
 use super::{
     archive::{StagedUpdate, stage_archive},
     helper::{ReadyHelper, launch_helper},
-    release::{AvailableUpdate, ReleaseClient, Target},
+    release::{AvailableUpdate, BUILD_VERSION, Channel, ReleaseClient, Target},
     transaction::InstallLayout,
 };
 use anyhow::{Context, Result};
@@ -63,7 +63,12 @@ impl Controller {
         )
     }
     /// Starts a check unless another operation is busy; results arrive through `poll`.
-    pub fn check(&mut self, runtime: &tokio::runtime::Handle, ctx: &egui::Context) {
+    pub fn check(
+        &mut self,
+        runtime: &tokio::runtime::Handle,
+        ctx: &egui::Context,
+        channel: Channel,
+    ) {
         if self.busy() {
             return;
         }
@@ -76,8 +81,9 @@ impl Controller {
             let result = async {
                 ReleaseClient::new()?
                     .check(
-                        env!("CARGO_PKG_VERSION"),
+                        BUILD_VERSION,
                         Target::current().context("No update build for this platform")?,
+                        channel,
                     )
                     .await
             }
@@ -230,16 +236,16 @@ mod tests {
         c.download(rt.handle(), &ctx);
         assert!(matches!(c.state, State::Idle));
         assert!(c.task.is_none());
-        c.check(rt.handle(), &ctx);
+        c.check(rt.handle(), &ctx, Channel::Stable);
         let id = c.generation;
         assert!(c.busy());
-        c.check(rt.handle(), &ctx);
+        c.check(rt.handle(), &ctx, Channel::Stable);
         c.download(rt.handle(), &ctx);
         assert_eq!(c.generation, id);
         c.tx.send((id, Event::Checked(Ok(None)))).unwrap();
         assert!(!c.poll(rt.handle(), &ctx));
         assert!(matches!(c.state, State::Current));
-        c.check(rt.handle(), &ctx);
+        c.check(rt.handle(), &ctx, Channel::Stable);
         c.tx.send((c.generation, Event::Checked(Ok(Some(update())))))
             .unwrap();
         assert!(!c.poll(rt.handle(), &ctx));
@@ -254,7 +260,7 @@ mod tests {
         assert!(matches!(c.state, State::HandingOff));
         let id = c.generation;
         c.cancel();
-        c.check(rt.handle(), &ctx);
+        c.check(rt.handle(), &ctx, Channel::Stable);
         c.download(rt.handle(), &ctx);
         assert_eq!(c.generation, id);
         assert!(matches!(c.state, State::HandingOff));

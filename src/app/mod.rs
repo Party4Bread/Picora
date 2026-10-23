@@ -1,5 +1,6 @@
 mod design;
 mod events;
+mod giphy;
 mod grid;
 #[cfg(target_os = "linux")]
 mod ime;
@@ -57,6 +58,7 @@ enum View {
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
     Library,
+    Giphy,
     Browse,
     Groups,
     Accounts,
@@ -77,6 +79,7 @@ struct PendingPaste {
     from_picker: bool,
 }
 pub struct App {
+    giphy: giphy::Panel,
     updates: crate::update::controller::Controller,
     update_health_sent: bool,
     store: Store,
@@ -163,6 +166,7 @@ impl App {
             bus,
         )?;
         let mut app = Self {
+            giphy: giphy::Panel::default(),
             updates: crate::update::controller::Controller::default(),
             update_health_sent: false,
             packs: store.packs()?,
@@ -213,7 +217,8 @@ impl App {
             app.picker_open = false;
         }
         if app.settings.check_updates_automatically {
-            app.updates.check(&app.services.runtime, ctx);
+            app.updates
+                .check(&app.services.runtime, ctx, app.settings.update_channel);
         }
         app.register_shortcut(false);
         #[cfg(target_os = "linux")]
@@ -319,6 +324,7 @@ impl App {
                 }
             }
             Err(error) => {
+                eprintln!("Shortcut unavailable: {error:#}");
                 self.shortcut_status = format!("{error:#}");
                 self.message(format!("Shortcut unavailable: {error:#}"), true);
             }
@@ -355,9 +361,10 @@ impl App {
         self.focus_search = true;
         #[cfg(target_os = "macos")]
         if let Err(error) = focus::activate_current_app() {
+            eprintln!("Could not focus the sticker window: {error:#}");
             self.message(
-                format!("Could not activate Picora: {error}. Click the picker to search."),
-                true,
+                "Click the sticker window to start typing. If it is hidden, choose Open picker from Picora’s menu bar icon.",
+                false,
             );
         }
         ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Visible(true));
@@ -622,6 +629,7 @@ impl App {
                         }
                     });
                 });
+                self.update_notice(ui);
                 #[cfg(target_os = "macos")]
                 if self.settings.auto_paste
                     && !platform::macos_permissions::accessibility_allowed()
@@ -708,6 +716,7 @@ impl eframe::App for App {
             self.pending = None;
         }
         self.handle_events(ctx);
+        self.giphy.poll(&self.services.runtime, ctx);
         if self.quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;

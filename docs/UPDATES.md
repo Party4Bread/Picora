@@ -1,12 +1,18 @@
 # Updating Picora
 
-Settings → Updates checks stable GitHub Releases from Party4Bread/Picora. Automatic startup checks are enabled by default and can be disabled. Checks run in the background. Nothing is installed until **Update and restart** is clicked. Cancelling the download leaves the installed app unchanged.
+Settings → Updates checks GitHub Releases from Party4Bread/Picora, using the Stable channel by default. Automatic startup checks are enabled by default and can be disabled. Checks run in the background. Nothing is installed until **Update and restart** is clicked. Cancelling the download leaves the installed app unchanged.
 
 Updates replace application files on Windows, Linux and macOS. The Windows installer is only for first installation; the updater does not invoke it. Both installed and portable Windows copies keep their existing location. The uninstaller remains intact, and the helper holds the installer mutex while replacing files; Windows Installed Apps may show the original installer version until an installer upgrade. Picora itself shows its current version.
 
 The running installation must be writable. No administrator elevation is requested. On macOS, run the extracted .app from a writable directory, not inside a read-only disk image. Supported release targets are Windows x86_64, Linux x86_64 and macOS Apple Silicon (aarch64). Other targets can still build from source but receive no automatic replacement.
 
 A separate helper waits for Picora to exit, keeps backups, replaces files, and starts the new version. The new app acknowledges successful storage and desktop initialization. A failed start or acknowledgement timeout (60 seconds) restores the previous files. Application data, sticker collections and credentials are outside this transaction and are preserved. Future database migrations must retain compatibility with the preceding app version for rollback to remain useful.
+
+## Development channel
+
+Settings → Updates → Update channel offers Stable (the default) and Dev. Dev checks the newest CI-tested main build; switching back to Stable offers the latest stable release even if its version is lower. Both channels require an explicit Update and restart.
+
+A successful main push with build changes publishes an immutable prerelease named `v<version>-dev.<run-id>.g<commit>`, using the existing CI artifacts and checksum manifest. The app embeds the same version, including the first 12 commit characters. Documentation-only pushes and pull requests do not publish development releases. Dev prereleases never become GitHub's latest stable release.
 
 ## Recovery
 

@@ -122,6 +122,7 @@ pub struct Group {
 #[serde(default)]
 pub struct Settings {
     pub check_updates_automatically: bool,
+    pub update_channel: crate::update::release::Channel,
     pub shortcut: String,
     pub auto_paste: bool,
     pub launch_at_login: bool,
@@ -132,6 +133,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             check_updates_automatically: true,
+            update_channel: crate::update::release::Channel::Stable,
             shortcut: "Ctrl+Shift+Space".into(),
             auto_paste: true,
             launch_at_login: false,

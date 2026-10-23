@@ -317,11 +317,16 @@ impl Services {
             });
         }
     }
-    pub fn login(&self) {
+    pub fn login(&self, reuse_session: bool) {
         let s = self.clone();
         self.runtime.spawn(async move {
+            let cookies = if reuse_session {
+                crate::auth::load().unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             s.login_with(
-                crate::auth::login(crate::auth::load().unwrap_or_default()),
+                crate::auth::login(cookies),
                 |cookies| async move {
                     tokio::task::spawn_blocking(move || crate::auth::save(&cookies)).await?
                 },
@@ -343,7 +348,20 @@ impl Services {
             let cookies = sign_in.await?;
             let repo = Repository::new(Provider::Arca)?;
             repo.set_cookies(&cookies);
-            // Keep the usable session even if persistence or verification fails.
+            let preserve_previous = {
+                let mut status = self.account_status()?;
+                let previous = status.has_session || status.saved;
+                status.check = account::CheckState::Checking;
+                previous
+            };
+            self.bus.ctx.request_repaint();
+            let check = verify(repo.clone()).await.map_err(|e| format!("{e:#}"));
+            if preserve_previous && let Err(error) = &check {
+                anyhow::bail!(
+                    "Reconnect could not be verified. Your previous session was kept. {error}"
+                );
+            }
+            // A first sign-in remains usable in memory if saving fails.
             self.repos
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Repository state unavailable; restart Picora"))?[1] =
@@ -360,7 +378,6 @@ impl Services {
                 storage_error,
             };
             self.bus.ctx.request_repaint();
-            let check = verify(repo).await.map_err(|e| format!("{e:#}"));
             self.account_status()?.finish_check(check);
             Ok(self.account_status()?.label().to_owned())
         }

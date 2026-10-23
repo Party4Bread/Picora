@@ -1,7 +1,7 @@
 use super::{MAX_ASSET_BYTES, read_response};
 use std::io::{Read, Write};
 
-async fn response(status: u16, headers: &str, body: Vec<u8>) -> reqwest::Response {
+pub(super) async fn response(status: u16, headers: &str, body: Vec<u8>) -> reqwest::Response {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let header = format!("HTTP/1.1 {status} Fixture\r\n{headers}Connection: close\r\n\r\n");

@@ -69,6 +69,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Identify development build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import os, tomllib
+          version = tomllib.loads(open('Cargo.toml').read())['package']['version']
+          version += f"-dev.{os.environ['GITHUB_RUN_ID']}.g{os.environ['GITHUB_SHA'][:12]}"
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'PICORA_BUILD_VERSION={version}\n')
+          PYTHON
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -112,3 +123,38 @@ jobs:
           # to permanent release storage before the short CI retention expires.
           compression-level: 0
           retention-days: 7
+
+  publish-dev:
+    needs: [changes, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: picora-*
+          path: dist
+          merge-multiple: true
+      - name: Publish tested development build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python3 - <<'PYTHON'
+          import os, tomllib
+          version = tomllib.loads(open('Cargo.toml').read())['package']['version']
+          print(f"{version}-dev.{os.environ['GITHUB_RUN_ID']}.g{os.environ['GITHUB_SHA'][:12]}")
+          PYTHON
+          )
+          tag="v$version"
+          python3 scripts/update_manifest.py --tag "$tag" --dev-version "$version"
+          if gh release view "$tag" --json isDraft --jq '.isDraft' > /tmp/picora-release-draft; then
+            if [ "$(cat /tmp/picora-release-draft)" = "false" ]; then
+              exit 0
+            fi
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --draft --prerelease --title "Dev $version" --notes "Development build from main commit $GITHUB_SHA. All platform CI checks passed. May contain unfinished changes."
+          fi
+          gh release upload "$tag" dist/* --clobber
+          gh release edit "$tag" --draft=false --prerelease --latest=false

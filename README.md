@@ -24,7 +24,10 @@ These are Picora’s currently supported sources. Your stickers are organized to
 | Repository | Browse and import | Sign-in |
 | --- | --- | --- |
 | [DCInside](https://dccon.dcinside.com/) | Search packs or import by pack URL | Not required |
-| [arca.live](https://arca.live/e/) | Search packs or import by pack URL | Required; website verification may be requested |
+| [arca.live (아카라이브)](https://arca.live/e/) | Search packs or import by pack URL | Required; website verification may be requested |
+| [GIPHY](https://giphy.com/) | Online GIF/sticker search; copy a still image or GIF link | Your own GIPHY API key |
+
+GIPHY: open **Library → GIPHY**, enter your API key, and choose **Use and save key**. Keys use OS-protected storage. GIPHY results stay separate from offline packs; media is not saved to the library cache. Request limits depend on your API plan. The bundled attribution marks come from [GIPHY's official attribution kit](https://media.giphy.com/giphy-attribution-marks.zip).
 
 ## Download and install
 
@@ -35,6 +38,8 @@ These are Picora’s currently supported sources. Your stickers are organized to
 | Linux x64 | `picora-<version>-linux-x86_64.tar.gz` | Extract and run `Picora/picora --library`. |
 
 Download these files from [GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest).
+
+Choose **Settings → Updates → Update channel → Dev** to receive the newest main build that passed all platform CI checks. Dev builds may contain unfinished changes. Updates still require **Update and restart**; choose **Stable** to return to the latest stable release. Documentation-only commits do not produce a new build.
 
 - **Windows:** the installer is unsigned. Website sign-in requires WebView2. Quit Picora before a manual upgrade or uninstall; uninstalling preserves your library and settings.
 - **macOS:** builds are ad-hoc signed, not Apple-notarized. Read the [macOS installation guide](docs/MACOS-INSTALL.md) if Gatekeeper blocks launch. Intel Mac builds are not currently provided.
@@ -140,7 +145,7 @@ The arca.live check uses your saved session. Windows viewport tests need an inte
 
 Packaging and installer scripts are used by CI. `test_update_manifest.py` validates release metadata; `tests/update_process.rs` runs updater replacement and recovery scenarios as part of `cargo test`. Platform smoke scripts cover desktop behavior that headless CI cannot exercise. See [release and recovery documentation](docs/UPDATES.md).
 
-On Linux, optional desktop integration files are included in the archive. Put the binary on `PATH`, install the desktop entry to `~/.local/share/applications/`, and the icon to `~/.local/share/icons/hicolor/scalable/apps/`.
+On Linux, desktop integration files are included in the archive. Recent Wayland portals require the desktop entry to identify Picora when registering global shortcuts. Put the binary on `PATH`, install the desktop entry to `~/.local/share/applications/`, and the icon to `~/.local/share/icons/hicolor/scalable/apps/`.
 
 ## Project
 

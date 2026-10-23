@@ -126,6 +126,46 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn failed_reconnect_keeps_previous_session_and_does_not_persist_candidate() {
+        let fixture = Fixture::new();
+        let services = &fixture.services;
+        services
+            .repo(Provider::Arca)
+            .unwrap()
+            .set_cookies(&["session=previous; Path=/; Secure".into()]);
+        {
+            let mut status = services.account_status().unwrap();
+            status.has_session = true;
+            status.saved = true;
+        }
+        fixture.runtime.block_on(services.login_with(
+            async { Ok(vec!["session=candidate; Path=/; Secure".into()]) },
+            |_| async { panic!("failed reconnect must not replace saved credentials") },
+            |_| async { anyhow::bail!("catalog verification failed") },
+        ));
+        assert_eq!(
+            services
+                .repo(Provider::Arca)
+                .unwrap()
+                .cookie("session")
+                .as_deref(),
+            Some("previous")
+        );
+        let status = services.account_status().unwrap();
+        assert!(status.saved && status.has_session);
+        assert!(
+            status
+                .error()
+                .unwrap()
+                .contains("catalog verification failed")
+        );
+        assert!(matches!(
+            fixture.rx.try_recv().unwrap(),
+            Event::Login(Err(_))
+        ));
+    }
+
+    #[test]
     fn failed_sign_in_emits_error_without_saving_or_verifying() {
         let fixture = Fixture::new();
         let (services, rt, rx) = (&fixture.services, &fixture.runtime, &fixture.rx);

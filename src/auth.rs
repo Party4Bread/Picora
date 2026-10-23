@@ -102,7 +102,7 @@ pub fn helper() -> Result<()> {
         .build(&event_loop)?;
     let builder = WebViewBuilder::new()
         .with_incognito(true)
-        .with_url("https://arca.live/u/login?goto=%2Fe%2F")
+        .with_url("about:blank")
         .with_navigation_handler(|raw| allowed_login_navigation(&raw));
     #[cfg(target_os = "linux")]
     let view = {
@@ -117,10 +117,14 @@ pub fn helper() -> Result<()> {
     #[cfg(not(target_os = "linux"))]
     let view = builder.build(&window)?;
     for cookie in cookies {
-        if let Ok(c) = wry::cookie::Cookie::parse(cookie) {
-            let _ = view.set_cookie(&c);
-        }
+        let cookie =
+            wry::cookie::Cookie::parse(cookie).context("Saved sign-in cookie is invalid")?;
+        view.set_cookie(&cookie)
+            .context("Cannot restore saved sign-in cookies")?;
     }
+    // Restore the session before requesting a form tied to its CSRF cookie.
+    view.load_url("https://arca.live/u/login?goto=%2Fe%2F")
+        .context("Cannot open arca.live sign-in")?;
     event_loop.run(move |event, _, flow| {
         *flow = ControlFlow::Wait;
         if let Event::WindowEvent {
@@ -128,6 +132,15 @@ pub fn helper() -> Result<()> {
             ..
         } = event
         {
+            let page = view.url().ok().and_then(|raw| url::Url::parse(&raw).ok());
+            if page
+                .as_ref()
+                .is_none_or(|url| url.scheme() != "https" || url.path().starts_with("/u/login"))
+            {
+                eprintln!("Sign-in was not completed. Your previous session has not been changed.");
+                *flow = ControlFlow::ExitWithCode(1);
+                return;
+            }
             let cookies = match view.cookies() {
                 Ok(cookies) => cookies,
                 Err(error) => {

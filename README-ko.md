@@ -25,6 +25,9 @@ Windows 이모지 패널처럼 **Ctrl+Shift+Space**로 Picora를 열 수 있습�
 | --- | --- | --- |
 | [디시인사이드](https://dccon.dcinside.com/) | 팩 검색 또는 팩 URL로 가져오기 | 필요 없음 |
 | [아카라이브(arca.live)](https://arca.live/e/) | 팩 검색 또는 팩 URL로 가져오기 | 필요하며, 웹사이트 인증이 표시될 수 있음 |
+| [GIPHY](https://giphy.com/) | 온라인 GIF·스티커 검색, 정지 이미지 또는 GIF 링크 복사 | 개인 GIPHY API 키 |
+
+GIPHY는 **Library → GIPHY**에서 개인 API 키를 입력한 후 **Use and save key**로 설정합니다. 키는 운영체제의 보안 저장소에 보관됩니다. GIPHY 검색 결과는 오프라인 팩과 분리되며, 이미지를 라이브러리 캐시에 저장하지 않습니다. 요청 한도는 API 요금제에 따라 다릅니다. 표시되는 로고는 [GIPHY 공식 표시 자료](https://media.giphy.com/giphy-attribution-marks.zip)입니다.
 
 ## 다운로드 및 설치
 
@@ -35,6 +38,8 @@ Windows 이모지 패널처럼 **Ctrl+Shift+Space**로 Picora를 열 수 있습�
 | Linux x64 | `picora-<version>-linux-x86_64.tar.gz` | 압축을 풀고 `Picora/picora --library`를 실행합니다. |
 
 파일은 [GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest)에서 다운로드할 수 있습니다.
+
+**Settings → Updates → Update channel → Dev**에서 모든 플랫폼 CI 검증을 통과한 최신 main 빌드를 받을 수 있습니다. Dev 빌드에는 미완성 변경이 포함될 수 있습니다. 설치하려면 **Update and restart**를 눌러야 하며, **Stable**을 선택하면 최신 안정 릴리스로 돌아갈 수 있습니다. 문서만 변경한 커밋은 새 빌드를 만들지 않습니다.
 
 - **Windows:** 설치 프로그램에는 코드 서명이 없습니다. 웹사이트 로그인에는 WebView2가 필요합니다. 수동 업데이트나 제거 전에 Picora를 종료하세요. 제거해도 라이브러리와 설정은 유지됩니다.
 - **macOS:** 임시 서명(ad-hoc)을 사용하며 Apple 공증을 받지 않았습니다. Gatekeeper가 실행을 차단하면 [macOS 설치 안내](docs/MACOS-INSTALL.md)를 확인하세요. Intel Mac용 빌드는 현재 제공하지 않습니다.
@@ -140,7 +145,7 @@ python scripts/smoke_wayland_clipboard.py
 
 패키징과 설치 프로그램 스크립트는 CI에서 사용합니다. `test_update_manifest.py`는 릴리스 메타데이터를 검증하고, `tests/update_process.rs`는 `cargo test`의 일부로 업데이트 교체와 복구 시나리오를 실행합니다. 플랫폼별 검증 스크립트는 화면 없는 CI에서 확인할 수 없는 데스크톱 동작을 검사합니다. [릴리스와 복구 문서](docs/UPDATES.md)도 참고하세요.
 
-Linux 압축 파일에는 선택적으로 설치할 수 있는 데스크톱 연동 파일이 포함되어 있습니다. 실행 파일을 `PATH`에 등록하고, 데스크톱 항목을 `~/.local/share/applications/`에, 아이콘을 `~/.local/share/icons/hicolor/scalable/apps/`에 설치하세요.
+Linux 압축 파일에는 데스크톱 연동 파일이 포함되어 있습니다. 최신 Wayland 포털에서 전역 단축키를 등록하려면 Picora를 식별할 데스크톱 항목이 필요합니다. 실행 파일을 `PATH`에 등록하고, 데스크톱 항목을 `~/.local/share/applications/`에, 아이콘을 `~/.local/share/icons/hicolor/scalable/apps/`에 설치하세요.
 
 ## 프로젝트
 
