@@ -124,7 +124,7 @@ def verify(baseline, candidate):
                 assert (data / 'library.sqlite3').exists(), 'Replacement did not initialize the app'
                 if system == 'Darwin':
                     subprocess.run(['codesign', '--verify', '--deep', '--strict', str(installed)], check=True)
-                print(f'{target}: published baseline → candidate replacement, app health handshake, and data preservation passed')
+                print(f'{target}: published baseline -> candidate replacement, app health handshake, and data preservation passed')
         except Exception:
             log_path = root / 'helper.log'
             if log_path.exists():
