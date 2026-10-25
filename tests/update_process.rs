@@ -81,6 +81,12 @@ fn run() -> Result<()> {
                 std::thread::sleep(Duration::from_secs(1));
             }
         }
+        if helper::is_health_launch() {
+            ensure!(
+                helper::last_failure().is_none(),
+                "Replacement displayed a stale update failure"
+            );
+        }
         helper::acknowledge_health()?;
         publish_readiness(&layout.root, &version)?;
         return Ok(());
@@ -107,6 +113,11 @@ fn scenario(mode: &str) -> Result<()> {
     fs::create_dir_all(layout.executable().parent().unwrap())?;
     fs::copy(std::env::current_exe()?, layout.executable())?;
     fs::write(layout.root.join("version.txt"), "old")?;
+    fs::create_dir_all(layout.state_dir()?)?;
+    fs::write(
+        layout.state_dir()?.join("last-error.txt"),
+        "Previous attempt failed",
+    )?;
     let job = temp.path().join("layout.json");
     fs::write(&job, serde_json::to_vec(&layout)?)?;
     let mut cmd = Command::new(std::env::current_exe()?);

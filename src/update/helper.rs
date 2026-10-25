@@ -432,6 +432,10 @@ fn cleanup_staging(layout: &InstallLayout) {
 }
 #[must_use]
 pub fn last_failure() -> Option<String> {
+    // The replacement starts before its helper clears the previous attempt’s error.
+    if is_health_launch() {
+        return None;
+    }
     let layout = InstallLayout::detect(&std::env::current_exe().ok()?).ok()?;
     let path = layout.state_dir().ok()?.join("last-error.txt");
     if fs::metadata(&path).ok()?.len() > 64 * 1024 {
