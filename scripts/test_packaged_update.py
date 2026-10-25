@@ -66,6 +66,10 @@ def verify(baseline, candidate):
             installed /= 'Picora.app'
         executable = installed / relative
         replacement = staged / ('Picora.app' if system == 'Darwin' else '') / relative
+        if system == 'Linux':
+            dependencies = subprocess.check_output(['ldd', str(replacement)], text=True)
+            assert 'libxdo.so' not in dependencies, 'Unused tray feature reintroduced the libxdo ABI dependency'
+            assert 'not found' not in dependencies, dependencies
         expected = hashlib.sha256(replacement.read_bytes()).digest()
         helper = work / ('updater.exe' if system == 'Windows' else 'updater')
         shutil.copy2(executable, helper)

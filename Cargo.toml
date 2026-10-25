@@ -32,7 +32,7 @@ hex = "0.4"
 clipboard-rs = "0.3"
 global-hotkey = "0.7"
 enigo = { version = "0.3", default-features = false, features = ["x11rb"] }
-tray-icon = "0.21"
+tray-icon = { version = "0.21", default-features = false }
 wry = "0.53"
 tao = "0.34"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
