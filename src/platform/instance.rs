@@ -56,6 +56,10 @@ impl Instance {
     ) -> Result<Option<Self>> {
         std::fs::create_dir_all(root)?;
         #[cfg(unix)]
+        let canonical_root = root.canonicalize()?;
+        #[cfg(unix)]
+        let root = canonical_root.as_path();
+        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700))?;
@@ -66,11 +70,40 @@ impl Instance {
             .read(true)
             .write(true)
             .open(root.join("instance.lock"))?;
-        let socket = root.join("picora.sock");
+
         let namespace = format!(
             "picora-{}",
             &hex::encode(Sha256::digest(root.to_string_lossy().as_bytes()))[..24]
         );
+        let socket = root.join("picora.sock");
+        #[cfg(unix)]
+        let socket = {
+            use std::os::unix::{
+                ffi::OsStrExt,
+                fs::{DirBuilderExt, MetadataExt},
+            };
+            if socket.as_os_str().as_bytes().len() >= 100 {
+                // macOS sockaddr_un has only 104 bytes, including its terminator.
+                let uid = unsafe { libc::geteuid() };
+                let directory = std::path::PathBuf::from(format!("/tmp/{namespace}-{uid}"));
+                match std::fs::DirBuilder::new().mode(0o700).create(&directory) {
+                    Ok(()) => (),
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+                    Err(error) => {
+                        return Err(error)
+                            .context("Cannot create short activation socket directory");
+                    }
+                }
+                let metadata = std::fs::symlink_metadata(&directory)?;
+                anyhow::ensure!(
+                    metadata.is_dir() && metadata.uid() == uid && metadata.mode() & 0o077 == 0,
+                    "Activation socket directory is not private to this user"
+                );
+                directory.join("socket")
+            } else {
+                socket
+            }
+        };
         let name = if cfg!(windows) {
             namespace.to_ns_name::<GenericNamespaced>()?
         } else {

@@ -88,7 +88,7 @@ cargo run --release --locked -- --library
 Debian/Ubuntu에서는 먼저 빌드 의존성을 설치합니다.
 
 ```sh
-sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libxdo-dev libgl1-mesa-dev libdbus-1-dev
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libxkbcommon-x11-0 libgl1-mesa-dev libdbus-1-dev
 ```
 
 Linux 릴리스 실행에는 GTK 3, WebKitGTK 4.1, AppIndicator와 관련 X11 라이브러리가 필요합니다. macOS 빌드에는 Apple 개발 도구가 필요하며 시스템 WebKit을 사용합니다. Windows 빌드에는 Visual Studio C++ Build Tools와 최신 Rust MSVC 도구 모음(`rustup update stable`)이 필요합니다.
