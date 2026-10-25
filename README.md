@@ -88,7 +88,7 @@ cargo run --release --locked -- --library
 On Debian/Ubuntu, install build dependencies first:
 
 ```sh
-sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libxdo-dev libgl1-mesa-dev libdbus-1-dev
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev libx11-dev libxrandr-dev libxi-dev libxkbcommon-x11-0 libgl1-mesa-dev libdbus-1-dev
 ```
 
 Linux releases require GTK 3, WebKitGTK 4.1, AppIndicator, and the associated X11 libraries at runtime. macOS builds require Apple's development tools and use system WebKit. Windows builds require Visual Studio C++ Build Tools and a current Rust MSVC toolchain (`rustup update stable`).

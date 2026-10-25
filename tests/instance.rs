@@ -156,3 +156,27 @@ fn activation_routes_to_owner_and_lock_is_released_on_exit() {
     replacement.send(b'X');
     wait_success(&mut replacement.child);
 }
+
+#[test]
+fn long_data_paths_still_allow_secondary_activation() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("long-data-directory-".repeat(8));
+    let mut owner = Owner::start(&root);
+    #[cfg(unix)]
+    let secondary_root = {
+        let alias = temp.path().join("alias");
+        std::os::unix::fs::symlink(&root, &alias).unwrap();
+        alias
+    };
+    #[cfg(not(unix))]
+    let secondary_root = root.clone();
+    let mut secondary = command(&secondary_root, "library")
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_success(&mut secondary);
+    owner.send(b'R');
+    owner.expect("library");
+    owner.send(b'X');
+    wait_success(&mut owner.child);
+}
