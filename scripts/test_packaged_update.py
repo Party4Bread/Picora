@@ -85,7 +85,11 @@ def verify(baseline, candidate):
                 listener.listen()
                 listener.settimeout(30)
                 token = secrets.token_hex(32)
-                job = dict(layout=dict(root=str(installed), target=target),
+                install_path = str(installed)
+                if system == 'Windows' and not install_path.startswith('\\\\?\\'):
+                    install_path = ('\\\\?\\UNC\\' + install_path[2:] if install_path.startswith('\\\\')
+                                    else '\\\\?\\' + install_path)
+                job = dict(layout=dict(root=install_path, target=target),
                            staged=dict(root=str(staged), target=target,
                                        files=[p.relative_to(staged).as_posix() for p in staged.rglob('*') if p.is_file()]),
                            parent=parent.pid, ready_address=f'127.0.0.1:{listener.getsockname()[1]}', nonce=token)
@@ -117,6 +121,11 @@ def verify(baseline, candidate):
                 if system == 'Darwin':
                     subprocess.run(['codesign', '--verify', '--deep', '--strict', str(installed)], check=True)
                 print(f'{target}: published baseline → candidate replacement, app health handshake, and data preservation passed')
+        except Exception:
+            log_path = root / 'helper.log'
+            if log_path.exists():
+                print(log_path.read_text(errors='replace'), file=sys.stderr)
+            raise
         finally:
             if parent.poll() is None:
                 parent.kill()
