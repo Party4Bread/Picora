@@ -25,16 +25,16 @@ These are Picora’s currently supported sources. Your stickers are organized to
 | --- | --- | --- |
 | [DCInside](https://dccon.dcinside.com/) | Search packs or import by pack URL | Not required |
 | [arca.live (아카라이브)](https://arca.live/e/) | Search packs or import by pack URL | Required; website verification may be requested |
-| [GIPHY](https://giphy.com/) | Online GIF/sticker search; copy a still image or GIF link | Your own GIPHY API key |
+| [GIPHY](https://giphy.com/) | Individual GIFs and stickers; copy, favorite, or add each one to a group | Your own GIPHY API key |
 
-GIPHY: open **Library → GIPHY**, enter your API key, and choose **Use and save key**. Keys use OS-protected storage. GIPHY results stay separate from offline packs; media is not saved to the library cache. Request limits depend on your API plan. The bundled attribution marks come from [GIPHY's official attribution kit](https://media.giphy.com/giphy-attribution-marks.zip).
+GIPHY: open **Library → Accounts**, enter your API key, and choose **Use and save key**. Keys use OS-protected storage. Then choose **GIPHY** in **Discover** to search stickers or GIFs (an empty search shows trending). Click a result to copy it; right-click to favorite it or add it to a group. Kept items are saved in the **Saved from GIPHY** collection and work in the picker, Recent, and groups like any other sticker. Request limits depend on your API plan. The bundled attribution marks come from [GIPHY's official attribution kit](https://media.giphy.com/giphy-attribution-marks.zip).
 
 ## Download and install
 
 | Platform | Release asset | Install |
 | --- | --- | --- |
 | Windows x64 | `picora-<version>-windows-x64-setup.exe` | Run the installer. A portable ZIP is also available. |
-| macOS, Apple Silicon | `picora-<version>-macos-aarch64.dmg` | Drag Picora to Applications. |
+| macOS, Apple Silicon | `picora-<version>-macos-aarch64.dmg` | Drag Picora to Applications. Opening it shows the library. |
 | Linux x64 | `picora-<version>-linux-x86_64.tar.gz` | Extract and run `Picora/picora --library`. |
 
 Download these files from [GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest).
@@ -47,8 +47,8 @@ Choose **Settings → Updates → Update channel → Dev** to receive the newest
 
 ## Quick start
 
-1. Open **Library → Discover** from the tray/menu-bar icon. Search for a pack or paste its repository URL, then choose **Add pack to favorites**.
-2. Create collections in **Groups**. Right-click a sticker to favorite it, assign groups, or remove it from your library.
+1. Open **Library → Discover** from the tray/menu-bar icon. Search for a pack or paste its repository URL, then choose **Download pack** to keep it offline, or **Favorite pack** to add it to Favorites.
+2. Create a group with **+** next to **Custom groups** in the library sidebar; right-click a group to rename or delete it. Click the star on a sticker to favorite it. Right-click a sticker to assign groups or remove it from your library. In a pack preview or GIPHY results, right-click adds just that sticker without the rest of the pack. Turn on **Select** (or Ctrl/Cmd-click, Shift-click for a range) to pick several stickers, then right-click one of them to add them all to a group at once. Groups also appear as icons at the bottom of the picker.
 3. Focus your chat or editor, press **Ctrl+Shift+Space**, and choose a sticker. If automatic paste is unavailable, use **Ctrl+V** or **Cmd+V**.
 
 Closing a window keeps Picora running in the tray. Use **Quit** to exit. The library window copies stickers without automatic paste; launch at login is opt-in.
@@ -115,6 +115,8 @@ In PowerShell:
 $env:PICORA_DATA_DIR = "$PWD\test-data"
 cargo run --locked -- --library
 ```
+
+If Picora closes unexpectedly, it writes the error to `crash.log` in the data folder. Open the folder from **Settings → Open data folder** and attach that file to your bug report.
 
 ### Tests and packaging
 

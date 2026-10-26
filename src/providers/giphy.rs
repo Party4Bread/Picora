@@ -1,4 +1,6 @@
-//! GIPHY uses online results and a user-supplied key, separate from saved packs.
+//! GIPHY search returns individual items with a user-supplied key. Items the
+//! user keeps (favorites or group members) are stored in one collection pack.
+use crate::model::{Pack, PackRef, Provider, Sticker};
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
@@ -31,10 +33,32 @@ pub struct Item {
     pub title: String,
     #[serde(default)]
     pub username: String,
-    pub url: String,
     pub images: HashMap<String, Rendition>,
 }
 impl Item {
+    /// Uses GIPHY's size-capped rendition so search grids and clipboard copies stay light.
+    /// # Errors
+    /// Rejects malformed identifiers and items without a usable GIF rendition.
+    pub fn sticker(&self) -> Result<Sticker> {
+        ensure!(
+            !self.id.is_empty()
+                && self.id.len() <= 64
+                && self.id.bytes().all(|b| b.is_ascii_alphanumeric()),
+            "GIPHY returned an invalid item"
+        );
+        let label = [self.title.trim(), self.username.trim()]
+            .into_iter()
+            .find(|s| !s.is_empty())
+            .unwrap_or("GIPHY");
+        Ok(Sticker {
+            id: self.id.clone(),
+            label: label.into(),
+            url: self
+                .image("downsized")
+                .or_else(|_| self.image("original"))?
+                .into(),
+        })
+    }
     pub fn image(&self, rendition: &str) -> Result<&str> {
         let url = &self
             .images
@@ -49,6 +73,33 @@ impl Item {
 pub struct Page {
     pub data: Vec<Item>,
     pub pagination: Pagination,
+}
+impl Page {
+    #[must_use]
+    pub fn more(&self) -> bool {
+        self.pagination.offset.saturating_add(self.pagination.count) < self.pagination.total_count
+    }
+    /// Items without a usable rendition are skipped rather than failing the page.
+    #[must_use]
+    pub fn stickers(&self) -> Vec<Sticker> {
+        self.data.iter().filter_map(|i| i.sticker().ok()).collect()
+    }
+}
+/// The library pack holding every GIPHY item the user kept.
+#[must_use]
+pub fn collection() -> Pack {
+    let reference = PackRef {
+        provider: Provider::Giphy,
+        id: "saved".into(),
+    };
+    Pack {
+        url: reference.url(),
+        reference,
+        title: "Saved from GIPHY".into(),
+        author: "GIPHY".into(),
+        thumbnail: String::new(),
+        stickers: Vec::new(),
+    }
 }
 #[derive(Deserialize)]
 pub struct Pagination {
@@ -86,9 +137,6 @@ impl Giphy {
             page.data.len() <= PAGE_SIZE as usize,
             "GIPHY returned too many results"
         );
-        for item in &page.data {
-            validate_url(&item.url)?;
-        }
         Ok(page)
     }
     pub async fn image(&self, url: &str) -> Result<Vec<u8>> {
@@ -103,7 +151,10 @@ impl Giphy {
     }
 }
 fn search_url(key: &str, kind: Kind, query: &str, offset: u32) -> Result<Url> {
-    ensure!(!key.trim().is_empty(), "Enter your GIPHY API key first");
+    ensure!(
+        !key.trim().is_empty(),
+        "Add your GIPHY API key in Accounts first"
+    );
     let endpoint = if query.trim().is_empty() {
         "trending"
     } else {
@@ -191,6 +242,37 @@ mod tests {
             "https://media.giphy.com/cat.gif?cid=example"
         );
         assert!(page.data[0].image("looping").is_err());
+        let sticker = page.data[0].sticker().unwrap();
+        assert_eq!(sticker.url, "https://media.giphy.com/cat.gif?cid=example");
+        assert_eq!(sticker.label, "GIPHY");
+    }
+
+    #[test]
+    fn items_become_size_capped_stickers_and_skip_unusable_entries() {
+        let page: Page = serde_json::from_value(serde_json::json!({
+            "data": [
+                {
+                    "id": "abc123", "title": "  ", "username": "catmaker",
+                    "images": {
+                        "original": {"url": "https://media.giphy.com/full.gif"},
+                        "downsized": {"url": "https://media.giphy.com/small.gif"}
+                    }
+                },
+                {"id": "../x", "images": {"original": {"url": "https://media.giphy.com/x.gif"}}},
+                {"id": "evil", "images": {"original": {"url": "https://evil.example/x.gif"}}}
+            ],
+            "pagination": {"total_count": 30, "count": 3, "offset": 24}
+        }))
+        .unwrap();
+        let stickers = page.stickers();
+        assert_eq!(stickers.len(), 1);
+        assert_eq!(stickers[0].id, "abc123");
+        assert_eq!(stickers[0].label, "catmaker");
+        assert_eq!(stickers[0].url, "https://media.giphy.com/small.gif");
+        assert!(page.more());
+        let collection = collection();
+        assert_eq!(collection.reference.key(), "giphy:saved");
+        assert!(collection.stickers.is_empty());
     }
 
     #[tokio::test]

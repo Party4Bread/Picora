@@ -5,6 +5,8 @@
 //! | Command | Completion | Correlation |
 //! | --- | --- | --- |
 //! | `browse`, `preview` | `Catalog`, `Preview` | caller-supplied request ID |
+//! | `search_giphy` | `Giphy` | caller-supplied request ID |
+//! | `load_giphy_key`, `save_giphy_key`, `forget_giphy_key` | `GiphyKey`, `GiphyKeyStored` | latest completion wins |
 //! | `request_media_preview` | `Media` | asset URL and animation request |
 //! | `download_pack` | `PackDownloaded` | returned pack; `Progress` is informational |
 //! | `copy`, `paste` | `Copied`, `Pasted` | one in-flight UI copy/paste operation |
@@ -25,19 +27,31 @@ use crate::{
         clipboard::ClipboardService,
         focus::{self, Target},
     },
-    providers::Repository,
+    providers::{
+        Repository,
+        giphy::{self, Giphy},
+    },
 };
-#[cfg(target_os = "linux")]
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use eframe::egui;
-use std::sync::{Arc, Mutex, mpsc};
+use futures_util::{StreamExt, stream};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+    mpsc,
+};
 use tokio::sync::Semaphore;
+
+/// Allowed values for the user's simultaneous-download setting.
+pub const DOWNLOAD_LIMITS: std::ops::RangeInclusive<usize> = 1..=16;
 
 pub enum Event {
     UpdateHealthFailed(String),
     Catalog(u64, Result<Vec<Pack>>),
     Preview(u64, Result<Pack>),
+    Giphy(u64, Result<giphy::Page>),
+    GiphyKey(Result<Option<String>>),
+    GiphyKeyStored(Result<&'static str>),
     PackDownloaded(Result<Pack>),
     Media(
         String,
@@ -75,7 +89,9 @@ pub struct Services {
     pub cache: MediaCache,
     pub bus: Bus,
     repos: Arc<Mutex<[Repository; 2]>>,
+    giphy: Giphy,
     semaphore: Arc<Semaphore>,
+    download_limit: Arc<AtomicUsize>,
     decode_slots: Arc<Semaphore>,
     clipboard: ClipboardService,
     pub account_status: Arc<Mutex<account::AccountStatus>>,
@@ -96,6 +112,7 @@ impl Services {
         session: Result<Vec<String>>,
     ) -> Result<Self> {
         let arca = Repository::new(Provider::Arca)?;
+        let downloads = crate::model::Settings::default().simultaneous_downloads;
         let mut account_status = account::AccountStatus::default();
         match session {
             Ok(c) if !c.is_empty() => {
@@ -119,7 +136,9 @@ impl Services {
             cache,
             bus,
             repos: Arc::new(Mutex::new([Repository::new(Provider::Dcinside)?, arca])),
-            semaphore: Arc::new(Semaphore::new(4)),
+            giphy: Giphy::new()?,
+            semaphore: Arc::new(Semaphore::new(downloads)),
+            download_limit: Arc::new(AtomicUsize::new(downloads)),
             decode_slots: Arc::new(Semaphore::new(2)),
             clipboard: ClipboardService::default(),
             account_status: Arc::new(Mutex::new(account_status)),
@@ -135,7 +154,30 @@ impl Services {
             .repos
             .lock()
             .map_err(|_| anyhow::anyhow!("Repository state unavailable; restart Picora"))?;
-        Ok(repos[usize::from(p != Provider::Dcinside)].clone())
+        let index = match p {
+            Provider::Dcinside => 0,
+            Provider::Arca => 1,
+            Provider::Giphy => anyhow::bail!("GIPHY has no pack repository"),
+        };
+        Ok(repos[index].clone())
+    }
+    /// A higher limit applies at once. With a lower limit, in-flight downloads
+    /// finish, and new ones wait until fewer than `limit` remain.
+    pub fn set_download_limit(&self, limit: usize) {
+        let limit = limit.clamp(*DOWNLOAD_LIMITS.start(), *DOWNLOAD_LIMITS.end());
+        let old = self.download_limit.swap(limit, Ordering::SeqCst);
+        if limit > old {
+            self.semaphore.add_permits(limit - old);
+        } else if let Ok(excess) = u32::try_from(old - limit)
+            && excess > 0
+        {
+            let semaphore = self.semaphore.clone();
+            self.runtime.spawn(async move {
+                if let Ok(permits) = semaphore.acquire_many_owned(excess).await {
+                    permits.forget();
+                }
+            });
+        }
     }
     pub fn account_status(&self) -> Result<std::sync::MutexGuard<'_, account::AccountStatus>> {
         self.account_status
@@ -147,6 +189,36 @@ impl Services {
         self.runtime.spawn(async move {
             let result = async { s.repo(p)?.browse(&query, page).await }.await;
             s.bus.send(Event::Catalog(id, result));
+        });
+    }
+    pub fn search_giphy(&self, key: String, kind: giphy::Kind, query: String, page: u32, id: u64) {
+        let s = self.clone();
+        self.runtime.spawn(async move {
+            let offset = page.saturating_sub(1).saturating_mul(giphy::PAGE_SIZE);
+            let result = s.giphy.search(&key, kind, &query, offset).await;
+            s.bus.send(Event::Giphy(id, result));
+        });
+    }
+    pub fn load_giphy_key(&self) {
+        let bus = self.bus.clone();
+        self.runtime.spawn_blocking(move || {
+            bus.send(Event::GiphyKey(crate::auth::giphy_key()));
+        });
+    }
+    pub fn save_giphy_key(&self, key: String) {
+        let bus = self.bus.clone();
+        self.runtime.spawn_blocking(move || {
+            let result = crate::auth::save_giphy_key(&key)
+                .context("Your key is available until Picora quits, but could not be saved")
+                .map(|()| "GIPHY key saved in OS-protected storage");
+            bus.send(Event::GiphyKeyStored(result));
+        });
+    }
+    pub fn forget_giphy_key(&self) {
+        let bus = self.bus.clone();
+        self.runtime.spawn_blocking(move || {
+            let result = crate::auth::forget_giphy_key().map(|()| "GIPHY key removed");
+            bus.send(Event::GiphyKeyStored(result));
         });
     }
     pub fn preview(&self, r: PackRef, id: u64) {
@@ -163,7 +235,10 @@ impl Services {
         if let Some(asset) = tokio::task::spawn_blocking(move || cache.cached(&key)).await?? {
             return Ok(asset);
         }
-        let bytes = self.repo(p)?.bytes(url).await?;
+        let bytes = match p {
+            Provider::Dcinside | Provider::Arca => self.repo(p)?.bytes(url).await?,
+            Provider::Giphy => self.giphy.image(url).await?,
+        };
         let cache = self.cache.clone();
         let url = url.to_owned();
         tokio::task::spawn_blocking(move || cache.save(&url, &bytes)).await?
@@ -171,11 +246,14 @@ impl Services {
     pub fn request_media_preview(&self, p: Provider, url: String, animate: bool) {
         let s = self.clone();
         self.runtime.spawn(async move {
+            // Fetch under the download limit; only decoding and the frames
+            // awaiting the UI are bounded by the smaller decode limit.
+            let asset = s.load_asset(p, &url).await;
             let Ok(permit) = s.decode_slots.clone().acquire_owned().await else {
                 return;
             };
             let result = async {
-                let asset = s.load_asset(p, &url).await?;
+                let asset = asset?;
                 let a = asset.clone();
                 let decoded =
                     tokio::task::spawn_blocking(move || crate::media::preview_asset(&a, animate))
@@ -190,15 +268,22 @@ impl Services {
         let s = self.clone();
         self.runtime.spawn(async move {
             let result = async {
-                for (i, sticker) in pack.stickers.iter().enumerate() {
+                let total = pack.stickers.len();
+                let progress = |done| {
                     s.bus.send(Event::Progress(format!(
-                        "Downloading {} · {}/{}",
-                        pack.title,
-                        i + 1,
-                        pack.stickers.len()
+                        "Downloading {} · {done}/{total}",
+                        pack.title
                     )));
-                    s.load_asset(pack.reference.provider, &sticker.url).await?;
-                }
+                };
+                progress(0);
+                let provider = pack.reference.provider;
+                let urls = pack.stickers.iter().map(|x| x.url.clone()).collect();
+                let limit = s.download_limit.load(Ordering::SeqCst);
+                download_all(urls, limit, progress, |url| {
+                    let s = s.clone();
+                    async move { s.load_asset(provider, &url).await.map(|_| ()) }
+                })
+                .await?;
                 Ok(pack)
             }
             .await;
@@ -449,6 +534,27 @@ impl Services {
             }
         });
     }
+}
+
+/// Runs up to `limit` fetches at once, reporting each completion.
+/// The first failure cancels the remaining fetches.
+async fn download_all<F>(
+    urls: Vec<String>,
+    limit: usize,
+    progress: impl Fn(usize),
+    fetch: impl Fn(String) -> F,
+) -> Result<()>
+where
+    F: std::future::Future<Output = Result<()>>,
+{
+    let mut downloads = stream::iter(urls).map(fetch).buffer_unordered(limit);
+    let mut done = 0;
+    while let Some(result) = downloads.next().await {
+        result?;
+        done += 1;
+        progress(done);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

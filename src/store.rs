@@ -1,7 +1,10 @@
-use crate::model::{Group, LibrarySticker, Pack, SavedPack, Settings};
+use crate::model::{Group, LibrarySticker, Pack, SavedPack, Settings, Sticker};
 use anyhow::{Result, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
+
+/// A sticker's `(pack key, sticker id)`.
+type StickerKey = (String, String);
 
 pub struct Store {
     conn: Connection,
@@ -92,6 +95,34 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+    /// Adds stickers to a pack, creating it from `collection` when absent.
+    /// Existing stickers keep their favorite state, group memberships, and recency.
+    /// # Errors
+    /// Reports deserialization or transactional database failures.
+    pub fn add_stickers(&self, collection: Pack, stickers: &[Sticker]) -> Result<()> {
+        let key = collection.reference.key();
+        let data: Option<String> = self
+            .conn
+            .query_row("SELECT data FROM packs WHERE key=?1", [&key], |r| r.get(0))
+            .optional()?;
+        let mut pack = match data {
+            Some(data) => serde_json::from_str(&data)?,
+            None => collection,
+        };
+        let before = pack.stickers.len();
+        for sticker in stickers {
+            if !pack.stickers.iter().any(|s| s.id == sticker.id) {
+                pack.stickers.push(sticker.clone());
+            }
+        }
+        if pack.stickers.len() == before {
+            return Ok(());
+        }
+        if pack.thumbnail.is_empty() {
+            pack.thumbnail.clone_from(&pack.stickers[0].url);
+        }
+        self.save_pack(&pack)
+    }
     /// # Errors
     /// Returns an error if the query fails or a persisted pack cannot be deserialized.
     pub fn packs(&self) -> Result<Vec<SavedPack>> {
@@ -132,6 +163,14 @@ impl Store {
         )?;
         ensure!(changed == 1, "Sticker is not in your library");
         Ok(())
+    }
+    /// Favorite stickers as `(pack key, sticker id)`, without loading pack data.
+    /// # Errors
+    /// Returns an error if the query fails.
+    pub fn favorite_keys(&self) -> Result<std::collections::HashSet<StickerKey>> {
+        let mut q = self.conn.prepare("SELECT s.pack,s.id FROM stickers s JOIN packs p ON p.key=s.pack WHERE COALESCE(s.favorite,p.favorite)=1")?;
+        Ok(q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?)
     }
     /// # Errors
     /// Returns an error if favorite rows or their saved pack data cannot be read.
@@ -178,18 +217,37 @@ impl Store {
         Ok(())
     }
     /// # Errors
-    /// Returns an error if the group query or row decoding fails.
+    /// Returns an error if the group query, row decoding, or cover pack data fails.
     pub fn groups(&self) -> Result<Vec<Group>> {
-        let mut q = self
-            .conn
-            .prepare("SELECT id,name FROM groups ORDER BY id")?;
-        Ok(q.query_map([], |r| {
-            Ok(Group {
-                id: r.get(0)?,
-                name: r.get(1)?,
+        let mut q = self.conn.prepare(
+            "SELECT g.id,g.name,c.pack,c.sticker FROM groups g LEFT JOIN (
+                SELECT group_id,pack,sticker,ROW_NUMBER() OVER (PARTITION BY group_id ORDER BY position,pack,sticker) AS n
+                FROM group_items) c ON c.group_id=g.id AND c.n=1
+            ORDER BY g.id",
+        )?;
+        let rows: Vec<(i64, String, Option<StickerKey>)> = q
+            .query_map([], |r| {
+                let cover = match (r.get(2)?, r.get(3)?) {
+                    (Some(pack), Some(sticker)) => Some((pack, sticker)),
+                    _ => None,
+                };
+                Ok((r.get(0)?, r.get(1)?, cover))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        let covers = self.resolve_rows(rows.iter().filter_map(|row| row.2.clone()).collect())?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, name, cover)| Group {
+                id,
+                name,
+                cover: cover.and_then(|(pack, sticker)| {
+                    covers
+                        .iter()
+                        .find(|c| c.pack_key == pack && c.sticker.id == sticker)
+                        .cloned()
+                }),
             })
-        })?
-        .collect::<rusqlite::Result<_>>()?)
+            .collect())
     }
     /// # Errors
     /// Rejects blank names and reports database insertion failures.
@@ -253,7 +311,7 @@ impl Store {
         }
         Ok(())
     }
-    fn resolve_rows(&self, rows: Vec<(String, String)>) -> Result<Vec<LibrarySticker>> {
+    fn resolve_rows(&self, rows: Vec<StickerKey>) -> Result<Vec<LibrarySticker>> {
         let mut stickers = std::collections::HashMap::new();
         for saved in self.packs()? {
             let key = saved.pack.reference.key();

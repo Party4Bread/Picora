@@ -96,6 +96,33 @@ pub(super) fn configure(ctx: &egui::Context) {
     });
 }
 
+/// Paints a five-pointed star, filled or outlined.
+pub(super) fn star(painter: &egui::Painter, center: egui::Pos2, radius: f32, filled: bool) {
+    let gold = Color32::from_rgb(245, 183, 0);
+    let points: Vec<_> = (0..10)
+        .map(|i| {
+            let r = if i % 2 == 0 { radius } else { radius * 0.45 };
+            let angle = std::f32::consts::PI * (i as f32 / 5. - 0.5);
+            center + egui::vec2(angle.cos(), angle.sin()) * r
+        })
+        .collect();
+    if filled {
+        // A star is not convex, but every point is visible from its center.
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(center, gold);
+        for p in &points {
+            mesh.colored_vertex(*p, gold);
+        }
+        for i in 0..10 {
+            mesh.add_triangle(0, i + 1, (i + 1) % 10 + 1);
+        }
+        painter.add(mesh);
+    }
+    painter.add(egui::Shape::closed_line(
+        points,
+        egui::Stroke::new(1.5_f32, if filled { gold } else { Color32::WHITE }),
+    ));
+}
 pub(super) fn nav_row(
     ui: &mut egui::Ui,
     label: &str,

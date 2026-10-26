@@ -6,12 +6,62 @@ fn main() -> std::process::ExitCode {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("Picora: {error:#}");
+            append_crash_log(&format!("Picora: {error:#}\n"));
             std::process::ExitCode::FAILURE
         }
     }
 }
-fn starts_hidden(args: &[String]) -> bool {
-    !args.iter().any(|a| a == "--show" || a == "--library")
+/// Returns `(library, background)`. Launchers pass `--library`, and autostart
+/// entries pass `--background`. A macOS app bundle cannot pass arguments, so a
+/// plain launch there opens the library instead of starting hidden.
+fn startup_mode(args: &[String]) -> (bool, bool) {
+    let library =
+        args.iter().any(|a| a == "--library") || (cfg!(target_os = "macos") && args.is_empty());
+    let background = !library && !args.iter().any(|a| a == "--show");
+    (library, background)
+}
+
+static CRASH_LOG: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// Windows release builds have no console, so panics and fatal errors are
+/// also appended to `crash.log` in the data folder.
+fn log_panics(root: &std::path::Path) {
+    let _ = CRASH_LOG.set(root.join("crash.log"));
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        append_crash_log(&format!(
+            "thread {}\n{info}\n{}\n",
+            thread.name().unwrap_or("unnamed"),
+            std::backtrace::Backtrace::force_capture(),
+        ));
+        default(info);
+    }));
+}
+fn append_crash_log(entry: &str) {
+    use std::io::Write;
+    let Some(path) = CRASH_LOG.get() else {
+        return;
+    };
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    // Start over rather than grow without bound.
+    let append = std::fs::metadata(path).is_ok_and(|m| m.len() < 1024 * 1024);
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(path));
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(append)
+        .truncate(!append)
+        .open(path)
+    {
+        let _ = write!(
+            file,
+            "--- unix time {seconds} · Picora {}\n{entry}",
+            env!("CARGO_PKG_VERSION")
+        );
+    }
 }
 
 fn run() -> Result<()> {
@@ -25,7 +75,7 @@ fn run() -> Result<()> {
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
-            "Picora — Rust sticker picker\n\nStarts in the system tray by default.\n\n  --show        Open the picker\n  --library     Open the library\n  --background  Start hidden (default)\n  --help        Show this help\n\nDefault shortcut: Ctrl+Shift+Space"
+            "Picora — Rust sticker picker\n\nStarts in the system tray by default (on macOS, opens the library).\n\n  --show        Open the picker\n  --library     Open the library\n  --background  Start hidden\n  --help        Show this help\n\nDefault shortcut: Ctrl+Shift+Space"
         );
         return Ok(());
     }
@@ -46,8 +96,8 @@ fn run() -> Result<()> {
             .data_local_dir()
             .to_owned()
     };
-    let library = args.iter().any(|a| a == "--library");
-    let background = starts_hidden(&args);
+    log_panics(&root);
+    let (library, background) = startup_mode(&args);
     let (tx, rx) = mpsc::channel();
     let Some(_instance) =
         picora::platform::instance::Instance::acquire(&root, library, background, tx)?
@@ -93,4 +143,19 @@ fn run() -> Result<()> {
     .map_err(|e| anyhow::anyhow!("Desktop UI failed: {e}"))?;
     drop(runtime);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::startup_mode;
+    #[test]
+    fn plain_launch_opens_library_only_where_launchers_cannot_pass_arguments() {
+        let mode =
+            |args: &[&str]| startup_mode(&args.iter().map(ToString::to_string).collect::<Vec<_>>());
+        let macos = cfg!(target_os = "macos");
+        assert_eq!(mode(&[]), (macos, !macos));
+        assert_eq!(mode(&["--background"]), (false, true));
+        assert_eq!(mode(&["--library"]), (true, false));
+        assert_eq!(mode(&["--show"]), (false, false));
+    }
 }
