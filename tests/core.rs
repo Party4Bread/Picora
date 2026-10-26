@@ -102,6 +102,46 @@ fn imports_are_idempotent_and_groups_survive_reopen() {
     assert_eq!(store.group_items(group).unwrap().len(), 1);
 }
 #[test]
+fn giphy_items_join_groups_individually_through_one_collection() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("library.sqlite3");
+    let store = Store::open(&path).unwrap();
+    let item = |id: &str| Sticker {
+        id: id.into(),
+        label: format!("GIF {id}"),
+        url: format!("https://media.giphy.com/media/{id}/giphy.gif"),
+    };
+    let collection = picora::providers::giphy::collection;
+    let key = collection().reference.key();
+    let group = store.create_group("Reactions").unwrap();
+    store.add_stickers(collection(), &[item("one")]).unwrap();
+    store.add_to_group(group, &key, "one").unwrap();
+    store.set_sticker_favorite(&key, "one", true).unwrap();
+    store.record_recent(&key, "one").unwrap();
+    store
+        .add_stickers(collection(), &[item("two"), item("one")])
+        .unwrap();
+    // Keeping an item twice must not reset its favorite, membership, or order.
+    store.add_stickers(collection(), &[item("one")]).unwrap();
+    drop(store);
+    let store = Store::open(&path).unwrap();
+    let packs = store.packs().unwrap();
+    assert_eq!(packs.len(), 1);
+    assert_eq!(packs[0].pack.reference.provider, Provider::Giphy);
+    assert_eq!(packs[0].pack.thumbnail, item("one").url);
+    assert_eq!(packs[0].pack.stickers.len(), 2);
+    assert_eq!(store.is_sticker_favorite(&key, "one").unwrap(), Some(true));
+    assert_eq!(store.is_sticker_favorite(&key, "two").unwrap(), Some(false));
+    let members = store.group_items(group).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].provider, Provider::Giphy);
+    assert_eq!(store.recents().unwrap()[0].sticker.id, "one");
+    store.remove_sticker(&key, "one").unwrap();
+    store.remove_sticker(&key, "two").unwrap();
+    assert!(store.packs().unwrap().is_empty());
+    assert!(store.group_items(group).unwrap().is_empty());
+}
+#[test]
 fn refreshing_pack_preserves_group_membership_and_favorites() {
     let store = Store::open_in_memory().unwrap();
     let mut p = pack();

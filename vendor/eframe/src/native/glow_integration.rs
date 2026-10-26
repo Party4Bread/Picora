@@ -99,6 +99,10 @@ struct GlutinWindowContext {
     window_from_viewport: OrderedViewportIdMap<WindowId>,
 
     focused_viewport: Option<ViewportId>,
+
+    /// PICORA: texture uploads from frames that could not make the GL context
+    /// current. They are applied, in order, by the next frame that paints.
+    pending_textures: egui::TexturesDelta,
 }
 
 struct Viewport {
@@ -596,15 +600,15 @@ impl GlowWinitRunning<'_> {
 
             let screen_size_in_pixels: [u32; 2] = window.inner_size().into();
 
-            {
-                frame_timer.pause();
-                change_gl_context(current_gl_context, not_current_gl_context, gl_surface);
-                frame_timer.resume();
-            }
+            frame_timer.pause();
+            let current = change_gl_context(current_gl_context, not_current_gl_context, gl_surface);
+            frame_timer.resume();
 
-            self.painter
-                .borrow()
-                .clear(screen_size_in_pixels, clear_color);
+            if current.is_ok() {
+                self.painter
+                    .borrow()
+                    .clear(screen_size_in_pixels, clear_color);
+            }
         }
 
         // ------------------------------------------------------------
@@ -642,6 +646,7 @@ impl GlowWinitRunning<'_> {
             viewports,
             current_gl_context,
             not_current_gl_context,
+            pending_textures,
             ..
         } = &mut *glutin;
 
@@ -658,30 +663,38 @@ impl GlowWinitRunning<'_> {
 
         let clipped_primitives = integration.egui_ctx.tessellate(shapes, pixels_per_point);
 
-        {
-            // We may need to switch contexts again, because of immediate viewports:
-            frame_timer.pause();
-            change_gl_context(current_gl_context, not_current_gl_context, gl_surface);
-            frame_timer.resume();
-        }
+        // We may need to switch contexts again, because of immediate viewports:
+        frame_timer.pause();
+        let current = change_gl_context(current_gl_context, not_current_gl_context, gl_surface);
+        frame_timer.resume();
 
         let screen_size_in_pixels: [u32; 2] = window.inner_size().into();
 
-        if !clear_before_update {
-            painter.clear(screen_size_in_pixels, clear_color);
-        }
-
-        painter.paint_and_update_textures(
-            screen_size_in_pixels,
-            pixels_per_point,
-            &clipped_primitives,
-            &textures_delta,
-        );
+        // PICORA: skip painting, not the frame. Viewport commands below still run.
+        let painted = match current {
+            Ok(()) => {
+                if !clear_before_update {
+                    painter.clear(screen_size_in_pixels, clear_color);
+                }
+                painter.paint_and_update_textures(
+                    screen_size_in_pixels,
+                    pixels_per_point,
+                    &clipped_primitives,
+                    &take_textures(pending_textures, textures_delta),
+                );
+                true
+            }
+            Err(err) => {
+                log::warn!("Skipping a frame: OpenGL context unavailable: {err}");
+                pending_textures.append(textures_delta);
+                false
+            }
+        };
 
         {
             for action in viewport.actions_requested.drain(..) {
                 match action {
-                    ActionRequested::Screenshot(user_data) => {
+                    ActionRequested::Screenshot(user_data) if painted => {
                         let screenshot = painter.read_screen_rgba(screen_size_in_pixels);
                         egui_winit
                             .egui_input_mut()
@@ -692,6 +705,7 @@ impl GlowWinitRunning<'_> {
                                 image: screenshot.into(),
                             });
                     }
+                    ActionRequested::Screenshot(_) => {}
                     ActionRequested::Cut => {
                         egui_winit.egui_input_mut().events.push(egui::Event::Cut);
                     }
@@ -715,17 +729,14 @@ impl GlowWinitRunning<'_> {
             integration.post_rendering(&window);
         }
 
-        {
+        if painted && let Some(context) = current_gl_context.as_ref() {
             // vsync - don't count as frame-time:
             frame_timer.pause();
             profiling::scope!("swap_buffers");
-            let context = current_gl_context
-                .as_ref()
-                .ok_or(egui_glow::PainterError::from(
-                    "failed to get current context to swap buffers".to_owned(),
-                ))?;
-
-            gl_surface.swap_buffers(context)?;
+            // PICORA: a failed swap drops one frame instead of exiting the app.
+            if let Err(err) = gl_surface.swap_buffers(context) {
+                log::warn!("swap_buffers failed: {err}");
+            }
             frame_timer.resume();
         }
 
@@ -754,6 +765,12 @@ impl GlowWinitRunning<'_> {
 
         if integration.should_close() {
             Ok(EventResult::CloseRequested)
+        } else if !painted {
+            // PICORA: retry once the context can be made current again.
+            Ok(EventResult::RepaintAt(
+                window_id,
+                Instant::now() + std::time::Duration::from_millis(250),
+            ))
         } else {
             Ok(EventResult::Wait)
         }
@@ -875,40 +892,47 @@ impl GlowWinitRunning<'_> {
     }
 }
 
+/// PICORA: returns an error instead of panicking. Windows switches surfaces
+/// on every frame; upstream released and re-acquired the context with
+/// `unwrap()`, so one transient `wglMakeCurrent` failure (display off, session
+/// lock, driver reset) aborted the app and could lose the context entirely.
+/// Switching through the possibly-current context keeps it on failure.
 fn change_gl_context(
     current_gl_context: &mut Option<glutin::context::PossiblyCurrentContext>,
     not_current_gl_context: &mut Option<glutin::context::NotCurrentContext>,
     gl_surface: &glutin::surface::Surface<glutin::surface::WindowSurface>,
-) {
+) -> glutin::error::Result<()> {
     profiling::function_scope!();
 
-    if !cfg!(target_os = "windows") {
-        // According to https://github.com/emilk/egui/issues/4289
-        // we cannot do this early-out on Windows.
-        // TODO(emilk): optimize context switching on Windows too.
-        // See https://github.com/emilk/egui/issues/4173
-
-        if let Some(current_gl_context) = current_gl_context {
+    if let Some(current_gl_context) = current_gl_context {
+        if !cfg!(target_os = "windows") {
+            // According to https://github.com/emilk/egui/issues/4289
+            // we cannot do this early-out on Windows.
             profiling::scope!("is_current");
             if gl_surface.is_current(current_gl_context) {
-                return; // Early-out to save a lot of time.
+                return Ok(()); // Early-out to save a lot of time.
             }
         }
+        profiling::scope!("make_current");
+        return current_gl_context.make_current(gl_surface);
     }
 
-    let not_current = if let Some(not_current_context) = not_current_gl_context.take() {
-        not_current_context
-    } else {
-        profiling::scope!("make_not_current");
-        current_gl_context
-            .take()
-            .unwrap()
-            .make_not_current()
-            .unwrap()
-    };
-
+    let not_current = not_current_gl_context
+        .take()
+        .expect("an OpenGL context is either current or not current");
     profiling::scope!("make_current");
-    *current_gl_context = Some(not_current.make_current(gl_surface).unwrap());
+    *current_gl_context = Some(not_current.make_current(gl_surface)?);
+    Ok(())
+}
+
+/// PICORA: prepends texture uploads queued by frames that could not paint.
+fn take_textures(
+    pending: &mut egui::TexturesDelta,
+    textures_delta: egui::TexturesDelta,
+) -> egui::TexturesDelta {
+    let mut all = std::mem::take(pending);
+    all.append(textures_delta);
+    all
 }
 
 impl GlutinWindowContext {
@@ -1095,6 +1119,7 @@ impl GlutinWindowContext {
             max_texture_side: None,
             window_from_viewport,
             focused_viewport: Some(ViewportId::ROOT),
+            pending_textures: Default::default(),
         };
 
         slf.initialize_window(ViewportId::ROOT, event_loop)?;
@@ -1267,18 +1292,17 @@ impl GlutinWindowContext {
         if let Some(viewport) = self.viewports.get(&viewport_id)
             && let Some(gl_surface) = &viewport.gl_surface
         {
-            change_gl_context(
+            let current = change_gl_context(
                 &mut self.current_gl_context,
                 &mut self.not_current_gl_context,
                 gl_surface,
             );
-            gl_surface.resize(
-                self.current_gl_context
-                    .as_ref()
-                    .expect("failed to get current context to resize surface"),
-                width_px,
-                height_px,
-            );
+            match (current, self.current_gl_context.as_ref()) {
+                (Ok(()), Some(context)) => gl_surface.resize(context, width_px, height_px),
+                // PICORA: the next resize or frame retries.
+                (Err(err), _) => log::warn!("Skipping a resize: OpenGL context unavailable: {err}"),
+                (Ok(()), None) => {}
+            }
         }
     }
 
@@ -1510,6 +1534,7 @@ fn render_immediate_viewport(
         current_gl_context,
         not_current_gl_context,
         viewports,
+        pending_textures,
         ..
     } = &mut *glutin;
 
@@ -1529,35 +1554,43 @@ fn render_immediate_viewport(
 
     let screen_size_in_pixels: [u32; 2] = window.inner_size().into();
 
-    change_gl_context(current_gl_context, not_current_gl_context, gl_surface);
-
-    let current_gl_context = current_gl_context.as_ref().unwrap();
-
-    if !gl_surface.is_current(current_gl_context) {
-        log::error!(
-            "egui::show_viewport_immediate: viewport {:?} ({:?}) was not created on main thread.",
-            viewport.ids.this,
-            viewport.builder.title
-        );
-    }
-
-    egui_glow::painter::clear(
-        painter.borrow().gl(),
-        screen_size_in_pixels,
-        [0.0, 0.0, 0.0, 0.0],
-    );
-
-    painter.borrow_mut().paint_and_update_textures(
-        screen_size_in_pixels,
-        pixels_per_point,
-        &clipped_primitives,
-        &textures_delta,
-    );
-
+    // PICORA: skip painting, not the frame. Viewport commands below still run,
+    // and the parent's next repaint renders this viewport again.
+    match change_gl_context(current_gl_context, not_current_gl_context, gl_surface)
+        .map(|()| current_gl_context.as_ref())
     {
-        profiling::scope!("swap_buffers");
-        if let Err(err) = gl_surface.swap_buffers(current_gl_context) {
-            log::error!("swap_buffers failed: {err}");
+        Ok(Some(current_gl_context)) => {
+            if !gl_surface.is_current(current_gl_context) {
+                log::error!(
+                    "egui::show_viewport_immediate: viewport {:?} ({:?}) was not created on main thread.",
+                    viewport.ids.this,
+                    viewport.builder.title
+                );
+            }
+
+            egui_glow::painter::clear(
+                painter.borrow().gl(),
+                screen_size_in_pixels,
+                [0.0, 0.0, 0.0, 0.0],
+            );
+
+            painter.borrow_mut().paint_and_update_textures(
+                screen_size_in_pixels,
+                pixels_per_point,
+                &clipped_primitives,
+                &take_textures(pending_textures, textures_delta),
+            );
+
+            profiling::scope!("swap_buffers");
+            if let Err(err) = gl_surface.swap_buffers(current_gl_context) {
+                log::error!("swap_buffers failed: {err}");
+            }
+        }
+        Ok(None) => pending_textures.append(textures_delta),
+        Err(err) => {
+            log::warn!("Skipping an immediate viewport frame: OpenGL context unavailable: {err}");
+            pending_textures.append(textures_delta);
+            egui_ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
     }
 

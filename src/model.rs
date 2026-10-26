@@ -8,6 +8,7 @@ use url::Url;
 pub enum Provider {
     Dcinside,
     Arca,
+    Giphy,
 }
 impl Provider {
     #[must_use]
@@ -15,6 +16,7 @@ impl Provider {
         match self {
             Self::Dcinside => "dcinside",
             Self::Arca => "arca",
+            Self::Giphy => "giphy",
         }
     }
     #[must_use]
@@ -22,6 +24,7 @@ impl Provider {
         match self {
             Self::Dcinside => "https://dccon.dcinside.com/",
             Self::Arca => "https://arca.live/",
+            Self::Giphy => "https://giphy.com/",
         }
     }
 }
@@ -30,6 +33,7 @@ impl fmt::Display for Provider {
         f.write_str(match self {
             Self::Dcinside => "DCInside",
             Self::Arca => "arca.live",
+            Self::Giphy => "GIPHY",
         })
     }
 }
@@ -48,6 +52,7 @@ impl PackRef {
         match self.provider {
             Provider::Dcinside => format!("https://dccon.dcinside.com/#{}", self.id),
             Provider::Arca => format!("https://arca.live/e/{}", self.id),
+            Provider::Giphy => Provider::Giphy.origin().into(),
         }
     }
     /// # Errors
@@ -117,6 +122,8 @@ pub struct LibrarySticker {
 pub struct Group {
     pub id: i64,
     pub name: String,
+    /// The group's first sticker, shown as its icon.
+    pub cover: Option<LibrarySticker>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -126,6 +133,7 @@ pub struct Settings {
     pub shortcut: String,
     pub auto_paste: bool,
     pub launch_at_login: bool,
+    pub simultaneous_downloads: usize,
     #[serde(with = "theme_setting")]
     pub theme: eframe::egui::ThemePreference,
 }
@@ -137,6 +145,7 @@ impl Default for Settings {
             shortcut: "Ctrl+Shift+Space".into(),
             auto_paste: true,
             launch_at_login: false,
+            simultaneous_downloads: 4,
             theme: eframe::egui::ThemePreference::System,
         }
     }

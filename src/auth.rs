@@ -38,6 +38,32 @@ pub fn forget() -> Result<()> {
     windows::forget(&windows::path()?)?;
     legacy
 }
+fn giphy_entry() -> Result<keyring::Entry> {
+    Ok(keyring::Entry::new(SERVICE, "giphy-api-key")?)
+}
+/// # Errors
+/// Returns an error if OS-protected credential storage is unavailable; a missing key is `None`.
+pub fn giphy_key() -> Result<Option<String>> {
+    match giphy_entry()?.get_password() {
+        Ok(key) => Ok(Some(key)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+/// # Errors
+/// Returns an error if OS-protected credential storage fails.
+pub fn save_giphy_key(key: &str) -> Result<()> {
+    giphy_entry()?.set_password(key)?;
+    Ok(())
+}
+/// # Errors
+/// Returns an error if credential storage cannot be cleared; a missing key is accepted.
+pub fn forget_giphy_key() -> Result<()> {
+    match giphy_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
 /// # Errors
 /// Returns an error if the helper cannot start, times out, exits unsuccessfully, or returns an empty or invalid session.
 pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {

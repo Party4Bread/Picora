@@ -65,7 +65,8 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
     )
     .unwrap();
     App {
-        giphy: super::giphy::Panel::default(),
+        giphy: super::giphy::State::default(),
+        selection: super::selection::Selection::default(),
         updates: crate::update::controller::Controller::default(),
         update_health_sent: false,
         packs: store.packs().unwrap(),
@@ -93,9 +94,7 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         browsing: false,
         downloading_pack: false,
         login_busy: false,
-        group_name: String::new(),
-        rename: String::new(),
-        chosen_group: None,
+        group_edit: None,
         visuals: HashMap::new(),
         inflight: HashSet::new(),
         failed: HashMap::new(),
@@ -152,6 +151,59 @@ fn label(output: &egui::FullOutput, needle: &str) -> Option<egui::Pos2> {
                 .find_map(|s| find(&s.shape, needle, false))
         })
 }
+/// The last-painted exact match, such as a popup item over the same sidebar text.
+fn topmost_label(output: &egui::FullOutput, needle: &str) -> Option<egui::Pos2> {
+    output
+        .shapes
+        .iter()
+        .rev()
+        .find_map(|clipped| match &clipped.shape {
+            egui::epaint::Shape::Text(t) if t.galley.text() == needle => {
+                Some(t.pos + t.galley.size() * 0.5)
+            }
+            _ => None,
+        })
+}
+fn click_node(
+    app: &mut App,
+    ctx: &egui::Context,
+    output: &egui::FullOutput,
+    name: &str,
+    button: egui::PointerButton,
+) {
+    let bounds = output
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .find_map(|(_, node)| {
+            (node.label() == Some(name))
+                .then(|| node.bounds())
+                .flatten()
+        })
+        .unwrap_or_else(|| panic!("accessible {name}"));
+    let pos = egui::pos2(
+        f64::midpoint(bounds.x0, bounds.x1) as f32,
+        f64::midpoint(bounds.y0, bounds.y1) as f32,
+    );
+    for pressed in [true, false] {
+        frame(
+            app,
+            ctx,
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button,
+                    pressed,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+    }
+}
 fn click(app: &mut App, ctx: &egui::Context, pos: egui::Pos2) {
     for pressed in [true, false] {
         frame(
@@ -170,7 +222,7 @@ fn click(app: &mut App, ctx: &egui::Context, pos: egui::Pos2) {
     }
 }
 #[test]
-fn favorite_button_populates_library_sidebar_before_download_finishes() {
+fn favorite_and_download_are_separate_and_both_populate_the_sidebar() {
     let root = tempfile::tempdir().unwrap();
     // No executor is running: downloading cannot complete before the assertion.
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -206,10 +258,35 @@ fn favorite_button_populates_library_sidebar_before_download_finishes() {
         frame(&mut app, &ctx, vec![]);
     }
     let output = frame(&mut app, &ctx, vec![]);
-    let button = label(&output, "Add pack to favorites").expect("favorite button visible");
-    click(&mut app, &ctx, button);
-    assert!(app.downloading_pack, "favorite click should start install");
-    assert_eq!(app.store.packs().unwrap().len(), 2, "both packs persisted");
+    let favorite = label(&output, "Favorite pack").expect("favorite toggle visible");
+    click(&mut app, &ctx, favorite);
+    assert!(!app.downloading_pack, "favoriting does not download");
+    let saved = app.store.packs().unwrap();
+    assert_eq!(saved.len(), 2, "both packs persisted");
+    assert!(saved.iter().all(|p| p.favorite));
+    click(&mut app, &ctx, favorite);
+    assert!(
+        !app.store
+            .packs()
+            .unwrap()
+            .iter()
+            .any(|p| p.pack.title == "New favorite pack" && p.favorite),
+        "the toggle unfavorites without removing the pack"
+    );
+    let output = frame(&mut app, &ctx, vec![]);
+    click(
+        &mut app,
+        &ctx,
+        label(&output, "Download pack").expect("download button visible"),
+    );
+    assert!(app.downloading_pack, "download starts without favoriting");
+    let saved = app.store.packs().unwrap();
+    assert_eq!(saved.len(), 2);
+    assert!(
+        saved
+            .iter()
+            .any(|p| p.pack.title == "New favorite pack" && !p.favorite)
+    );
     app.preview = None;
     app.tab = Tab::Library;
     let output = frame(&mut app, &ctx, vec![]);
@@ -282,21 +359,32 @@ fn picker_waits_for_window_focus_before_consuming_search_focus_request() {
 }
 
 #[test]
-fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
+fn picker_icon_bar_lists_saved_packs_and_custom_groups() {
     let root = tempfile::tempdir().unwrap();
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     let ctx = egui::Context::default();
+    ctx.enable_accesskit();
     let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
     let pack = crate::providers::dcinside::parse_detail(include_str!(
         "../../tests/fixtures/dc-detail.json"
     ))
     .unwrap();
     app.store.save_favorite_pack(&pack).unwrap();
-    app.store.create_group("Custom reactions").unwrap();
+    let filled = app.store.create_group("Custom reactions").unwrap();
+    app.store
+        .add_to_group(filled, &pack.reference.key(), &pack.stickers[1].id)
+        .unwrap();
+    let empty = app.store.create_group("Empty group").unwrap();
     app.refresh();
+    let cover = app.groups[0]
+        .cover
+        .as_ref()
+        .expect("first sticker is the cover");
+    assert_eq!(cover.sticker.id, pack.stickers[1].id);
+    assert!(app.groups[1].cover.is_none());
     let render = |app: &mut App, events| {
         ctx.run(
             egui::RawInput {
@@ -314,50 +402,58 @@ fn picker_dropdown_lists_saved_dcinside_packs_alongside_custom_groups() {
         render(&mut app, vec![]);
     }
     let output = render(&mut app, vec![]);
-    let pos = label(&output, "Groups")
-        .or_else(|| label(&output, "Packs & groups"))
-        .expect("picker collection dropdown");
-    for pressed in [true, false] {
-        render(
-            &mut app,
-            vec![
-                egui::Event::PointerMoved(pos),
-                egui::Event::PointerButton {
-                    pos,
-                    button: egui::PointerButton::Primary,
-                    pressed,
-                    modifiers: egui::Modifiers::default(),
-                },
-            ],
-        );
+    assert!(
+        label(&output, "Packs & groups").is_none(),
+        "icon bar replaces the duplicate dropdown"
+    );
+    let tiles: Vec<_> = output
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .filter_map(|(_, node)| {
+            let bounds = node.bounds()?;
+            let pos = egui::pos2(
+                f64::midpoint(bounds.x0, bounds.x1) as f32,
+                f64::midpoint(bounds.y0, bounds.y1) as f32,
+            );
+            Some((node.label()?.to_owned(), pos))
+        })
+        .collect();
+    let tile = |name: &str| {
+        tiles
+            .iter()
+            .find(|(label, _)| label == name)
+            .map(|(_, pos)| *pos)
+            .unwrap_or_else(|| panic!("{name} missing from picker icon bar"))
+    };
+    for (name, filter) in [
+        ("Custom reactions", Filter::Group(filled)),
+        ("Empty group", Filter::Group(empty)),
+        ("슬픈 고양이콘", Filter::Pack("dcinside:41982".into())),
+    ] {
+        let pos = tile(name);
+        for pressed in [true, false] {
+            render(
+                &mut app,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        assert!(app.picker_state.filter == filter, "{name} tile selects it");
     }
-    let output = render(&mut app, vec![]);
-    assert!(label(&output, "Custom reactions").is_some());
-    let pos =
-        label(&output, "슬픈 고양이콘").expect("saved DCInside pack must be selectable in picker");
-    for pressed in [true, false] {
-        render(
-            &mut app,
-            vec![
-                egui::Event::PointerMoved(pos),
-                egui::Event::PointerButton {
-                    pos,
-                    button: egui::PointerButton::Primary,
-                    pressed,
-                    modifiers: egui::Modifiers::default(),
-                },
-            ],
-        );
-    }
-    assert!(app.picker_state.filter == Filter::Pack("dcinside:41982".into()));
     assert!(
         app.library_state.filter == Filter::All,
         "picker selection must not change library filter"
-    );
-    let output = render(&mut app, vec![]);
-    assert!(
-        label(&output, "슬픈 고양이콘").is_some(),
-        "selected pack title must remain visible"
     );
 }
 
@@ -943,30 +1039,6 @@ fn failed_library_query_is_not_an_empty_collection() {
 }
 
 #[test]
-fn group_rendering_preserves_library_and_picker_queries() {
-    let root = tempfile::tempdir().unwrap();
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let ctx = egui::Context::default();
-    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
-    let group = app.store.create_group("Test group").unwrap();
-    app.refresh();
-    app.chosen_group = Some(group);
-    app.library_state.filter = Filter::Recent;
-    app.library_state.search = "library query".into();
-    app.picker_state.search = "picker query".into();
-    let _ = ctx.run(egui::RawInput::default(), |ctx| {
-        egui::CentralPanel::default().show(ctx, |ui| app.groups_ui(ui));
-    });
-    assert!(app.library_state.filter == Filter::Recent);
-    assert_eq!(app.library_state.search, "library query");
-    assert_eq!(app.picker_state.search, "picker query");
-    assert!(app.items(&Filter::Group(group), "").unwrap().is_empty());
-}
-
-#[test]
 fn copy_completion_respects_cancellation_modifiers_and_clipboard_failure() {
     for case in [
         "success",
@@ -1214,4 +1286,429 @@ fn update_notice_opens_settings_without_starting_download_or_pasting() {
     assert!(matches!(app.updates.state, State::Available(_)));
     let output = frame(&mut app, &ctx, vec![]);
     assert!(label(&output, "Update and restart").is_some());
+}
+
+#[test]
+fn giphy_result_joins_a_group_individually_and_late_searches_are_ignored() {
+    let root = tempfile::tempdir().unwrap();
+    // No executor is running: thumbnails and searches cannot complete.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let group = app.store.create_group("Reactions").unwrap();
+    app.refresh();
+    app.tab = Tab::Browse;
+    app.source = Provider::Giphy;
+    app.services
+        .bus
+        .send(Event::GiphyKey(Ok(Some("key".into()))));
+    app.handle_events(&ctx);
+    assert!(app.browsing, "a loaded key starts the GIPHY search");
+    let page = |id: &str| -> crate::providers::giphy::Page {
+        serde_json::from_value(serde_json::json!({
+            "data": [{"id": id, "title": format!("GIF {id}"), "images": {
+                "downsized": {"url": format!("https://media.giphy.com/media/{id}/giphy.gif")}
+            }}],
+            "pagination": {"total_count": 1, "count": 1, "offset": 0}
+        }))
+        .unwrap()
+    };
+    app.services
+        .bus
+        .send(Event::Giphy(app.catalog_id - 1, Ok(page("stale"))));
+    app.services
+        .bus
+        .send(Event::Giphy(app.catalog_id, Ok(page("cat"))));
+    app.handle_events(&ctx);
+    assert!(!app.browsing);
+    assert_eq!(app.giphy.results.len(), 1);
+    assert_eq!(app.giphy.results[0].sticker.id, "cat");
+    assert!(!app.giphy.more);
+    frame(&mut app, &ctx, vec![]);
+    let output = frame(&mut app, &ctx, vec![]);
+    let bounds = output
+        .platform_output
+        .accesskit_update
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .find_map(|(_, node)| {
+            (node.label() == Some("GIF cat"))
+                .then(|| node.bounds())
+                .flatten()
+        })
+        .expect("accessible GIPHY result");
+    let pos = egui::pos2(
+        f64::midpoint(bounds.x0, bounds.x1) as f32,
+        f64::midpoint(bounds.y0, bounds.y1) as f32,
+    );
+    for pressed in [true, false] {
+        frame(
+            &mut app,
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+    }
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Copy GIF link").is_some());
+    assert!(label(&output, "Remove sticker from library").is_none());
+    // The sidebar also lists the group; the context menu is painted last.
+    let menu_item = topmost_label(&output, "Reactions").expect("group action for an online result");
+    click(&mut app, &ctx, menu_item);
+    let members = app.store.group_items(group).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].provider, Provider::Giphy);
+    assert_eq!(members[0].sticker.id, "cat");
+    assert_eq!(app.packs.len(), 1, "kept item appears in the library");
+    assert!(
+        app.downloading_pack,
+        "kept item is downloaded for offline use"
+    );
+    assert_eq!(
+        app.groups[0].cover.as_ref().map(|c| c.sticker.id.as_str()),
+        Some("cat"),
+        "group icon updates after the add"
+    );
+    assert_eq!(app.packs[0].pack.title, "Saved from GIPHY");
+}
+
+#[test]
+fn giphy_lives_in_discover_and_accounts_not_its_own_tab() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    app.giphy.key_loading = false;
+    app.tab = Tab::Accounts;
+    frame(&mut app, &ctx, vec![]);
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "No API key").is_some());
+    assert!(label(&output, "Use and save key").is_some());
+    assert!(label(&output, "arca.live").is_some());
+    app.tab = Tab::Browse;
+    app.source = Provider::Giphy;
+    let output = frame(&mut app, &ctx, vec![]);
+    click(
+        &mut app,
+        &ctx,
+        label(&output, "Open Accounts").expect("missing key points to Accounts"),
+    );
+    assert!(app.tab == Tab::Accounts);
+}
+
+#[test]
+fn preview_sticker_joins_a_group_without_adding_its_whole_pack() {
+    let root = tempfile::tempdir().unwrap();
+    // No executor is running: the single-sticker download cannot complete.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let group = app.store.create_group("Reactions").unwrap();
+    app.refresh();
+    let pack = crate::providers::dcinside::parse_detail(include_str!(
+        "../../tests/fixtures/dc-detail.json"
+    ))
+    .unwrap();
+    let chosen = pack.stickers[2].clone();
+    app.tab = Tab::Browse;
+    app.preview = Some(pack.clone());
+    for _ in 0..3 {
+        frame(&mut app, &ctx, vec![]);
+    }
+    let output = frame(&mut app, &ctx, vec![]);
+    click_node(
+        &mut app,
+        &ctx,
+        &output,
+        &chosen.label,
+        egui::PointerButton::Secondary,
+    );
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Remove sticker from library").is_none());
+    click(
+        &mut app,
+        &ctx,
+        topmost_label(&output, "Reactions").expect("group action in pack preview"),
+    );
+    let members = app.store.group_items(group).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].sticker.id, chosen.id);
+    assert_eq!(members[0].pack_key, pack.reference.key());
+    let saved = app.store.packs().unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].pack.title, pack.title);
+    assert!(!saved[0].favorite, "the pack itself is not favorited");
+    assert_eq!(
+        saved[0].pack.stickers.len(),
+        1,
+        "only the chosen sticker is saved"
+    );
+    assert!(
+        app.downloading_pack,
+        "the kept sticker is downloaded for offline use"
+    );
+    // Adding the whole pack later keeps the earlier membership.
+    app.store.save_favorite_pack(&pack).unwrap();
+    assert_eq!(app.store.group_items(group).unwrap().len(), 1);
+    assert_eq!(
+        app.store.packs().unwrap()[0].pack.stickers.len(),
+        pack.stickers.len()
+    );
+}
+
+#[test]
+fn discover_multi_select_adds_chosen_stickers_to_a_group_in_one_action() {
+    let root = tempfile::tempdir().unwrap();
+    // No executor is running: copies and downloads cannot complete.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let group = app.store.create_group("Reactions").unwrap();
+    app.refresh();
+    let pack = crate::providers::dcinside::parse_detail(include_str!(
+        "../../tests/fixtures/dc-detail.json"
+    ))
+    .unwrap();
+    app.tab = Tab::Browse;
+    app.preview = Some(pack.clone());
+    for _ in 0..3 {
+        frame(&mut app, &ctx, vec![]);
+    }
+    let output = frame(&mut app, &ctx, vec![]);
+    click(
+        &mut app,
+        &ctx,
+        label(&output, "Select").expect("select toggle"),
+    );
+    assert!(app.selection.active);
+    for sticker in &pack.stickers[..3] {
+        let output = frame(&mut app, &ctx, vec![]);
+        click_node(
+            &mut app,
+            &ctx,
+            &output,
+            &sticker.label,
+            egui::PointerButton::Primary,
+        );
+    }
+    assert!(app.pending.is_none(), "selecting must not copy");
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "3 selected").is_some());
+    click_node(
+        &mut app,
+        &ctx,
+        &output,
+        &pack.stickers[1].label,
+        egui::PointerButton::Secondary,
+    );
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "3 stickers selected").is_some());
+    click(
+        &mut app,
+        &ctx,
+        topmost_label(&output, "Reactions").expect("batch group action"),
+    );
+    let members: Vec<_> = app
+        .store
+        .group_items(group)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.sticker.id)
+        .collect();
+    let chosen: Vec<_> = pack.stickers[..3].iter().map(|s| s.id.clone()).collect();
+    assert_eq!(members, chosen);
+    let saved = app.store.packs().unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(
+        saved[0].pack.stickers.len(),
+        3,
+        "only the selection is saved"
+    );
+    assert!(!saved[0].favorite);
+    assert!(
+        app.downloading_pack,
+        "selection is downloaded for offline use"
+    );
+    assert!(app.selection.chosen(&[]).is_empty());
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(
+        label(&output, "0 selected").is_some(),
+        "selection cleared, mode kept"
+    );
+}
+
+#[test]
+fn sidebar_creates_renames_and_deletes_groups_in_place() {
+    let root = tempfile::tempdir().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let key = |key| {
+        vec![egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    };
+    frame(&mut app, &ctx, vec![]);
+    let output = frame(&mut app, &ctx, vec![]);
+    assert!(label(&output, "Groups").is_none(), "no separate Groups tab");
+    assert!(label(&output, "No groups yet").is_some());
+    click(
+        &mut app,
+        &ctx,
+        label(&output, "+").expect("new group button"),
+    );
+    frame(&mut app, &ctx, vec![egui::Event::Text("Reactions".into())]);
+    frame(&mut app, &ctx, key(egui::Key::Enter));
+    assert!(app.group_edit.is_none());
+    assert_eq!(app.groups.len(), 1);
+    let id = app.groups[0].id;
+    assert_eq!(app.groups[0].name, "Reactions");
+    assert!(
+        app.library_state.filter == Filter::Group(id),
+        "new group opens"
+    );
+
+    let rename = |app: &mut App, name: &str, finish: egui::Key| {
+        let output = frame(app, &ctx, vec![]);
+        let pos = label(&output, &app.groups[0].name.clone()).expect("group row");
+        for pressed in [true, false] {
+            frame(
+                app,
+                &ctx,
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Secondary,
+                        pressed,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+            );
+        }
+        let output = frame(app, &ctx, vec![]);
+        click(app, &ctx, label(&output, "Rename").expect("rename action"));
+        assert!(app.group_edit.as_ref().is_some_and(|e| e.group == Some(id)));
+        name.clone_into(&mut app.group_edit.as_mut().unwrap().name);
+        frame(app, &ctx, vec![]);
+        frame(app, &ctx, key(finish));
+        assert!(app.group_edit.is_none());
+    };
+    rename(&mut app, "Ignored", egui::Key::Escape);
+    assert_eq!(app.groups[0].name, "Reactions", "Escape cancels");
+    rename(&mut app, "Work replies", egui::Key::Enter);
+    assert_eq!(app.groups[0].name, "Work replies");
+
+    app.picker_state.filter = Filter::Group(id);
+    let output = frame(&mut app, &ctx, vec![]);
+    let pos = label(&output, "Work replies").expect("group row");
+    for pressed in [true, false] {
+        frame(
+            &mut app,
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+    }
+    let output = frame(&mut app, &ctx, vec![]);
+    click(
+        &mut app,
+        &ctx,
+        label(&output, "Delete group").expect("delete action"),
+    );
+    assert!(app.groups.is_empty());
+    assert!(app.library_state.filter == Filter::All);
+    assert!(app.picker_state.filter == Filter::All);
+}
+
+#[test]
+fn star_toggles_one_favorite_without_copying_in_library_and_discover() {
+    let root = tempfile::tempdir().unwrap();
+    // No executor is running: copies and downloads cannot complete.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ctx = egui::Context::default();
+    ctx.enable_accesskit();
+    let mut app = fixture(root.path().to_owned(), rt.handle().clone(), &ctx);
+    let mut pack = crate::providers::dcinside::parse_detail(include_str!(
+        "../../tests/fixtures/dc-detail.json"
+    ))
+    .unwrap();
+    let preview = pack.clone();
+    pack.stickers.truncate(3);
+    app.store.save_pack(&pack).unwrap();
+    app.refresh();
+    let sticker = pack.stickers[1].clone();
+    for (action, expected) in [("Add to favorites", 1), ("Remove from favorites", 0)] {
+        frame(&mut app, &ctx, vec![]);
+        let output = frame(&mut app, &ctx, vec![]);
+        click_node(
+            &mut app,
+            &ctx,
+            &output,
+            &format!("{action}: {}", sticker.label),
+            egui::PointerButton::Primary,
+        );
+        assert!(app.pending.is_none(), "the star must not copy the sticker");
+        assert_eq!(app.store.favorite_items().unwrap().len(), expected);
+    }
+
+    // In Discover, the star keeps an unsaved sticker on its own.
+    let unsaved = preview.stickers[10].clone();
+    app.tab = Tab::Browse;
+    app.preview = Some(preview);
+    frame(&mut app, &ctx, vec![]);
+    let output = frame(&mut app, &ctx, vec![]);
+    click_node(
+        &mut app,
+        &ctx,
+        &output,
+        &format!("Add to favorites: {}", unsaved.label),
+        egui::PointerButton::Primary,
+    );
+    assert!(app.pending.is_none());
+    let favorites = app.store.favorite_items().unwrap();
+    assert_eq!(favorites.len(), 1);
+    assert_eq!(favorites[0].sticker.id, unsaved.id);
+    assert_eq!(app.store.packs().unwrap()[0].pack.stickers.len(), 4);
 }

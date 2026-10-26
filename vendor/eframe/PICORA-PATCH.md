@@ -26,6 +26,27 @@ an existing library and for a library first opened after the picker is hidden.
 Both verify actual native picker visibility on reopening. The original backend
 times out; the unadjusted upstream backport fails the background case.
 
+## Recoverable OpenGL context switches (`glow_integration.rs`)
+
+On Windows, eframe switches the shared OpenGL context between window surfaces
+on every frame. Upstream released and re-acquired it with `unwrap()`, so a
+single failed `wglMakeCurrent` panicked and closed Picora. With the library
+open, the hidden picker and the library window switch about 20 times per
+second, and failures can occur when Windows turns off the display, locks the
+session, or resets the GPU driver.
+
+`change_gl_context` now switches through the possibly-current context, which
+keeps the context if a switch fails, and returns the error. Callers skip
+painting that frame, but still handle viewport commands. Texture uploads
+from skipped frames are queued in `pending_textures` and applied by the next
+frame that paints. Root frames retry after 250 ms. A failed `swap_buffers`
+on the root window is logged instead of ending the event loop.
+
+Verified under Wine with a temporary fault injection: a burst of failed
+switches made the unpatched backend panic at `change_gl_context`, while the
+patched backend kept running and rendered once switches succeeded.
+`tests/windows_viewports.rs` also passes.
+
 Remove this override when migrating Picora to an eframe version with the fix
 and its newer App/UI lifecycle API. Re-run the native regression and the
 Windows acceptance procedure before removing it.

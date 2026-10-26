@@ -2,6 +2,8 @@ use super::{
     App, BrowseState, Color32, CopyMode, Duration, Filter, LibrarySticker, Provider, Tab, Vec2,
     View, egui,
 };
+use crate::model::Pack;
+use anyhow::Context;
 
 pub(super) struct Thumbnail {
     pub response: egui::Response,
@@ -118,7 +120,10 @@ impl App {
     }
     fn empty_grid(&mut self, ui: &mut egui::Ui, view: View) {
         ui.add_space(32.);
-        if self
+        if view == View::Discover {
+            ui.heading("No GIPHY results");
+            ui.label("Try another search, or clear it to see what is trending.");
+        } else if self
             .browse_state(view)
             .is_some_and(|s| !s.search.trim().is_empty())
         {
@@ -137,6 +142,12 @@ impl App {
                 self.open_library();
                 self.browse();
             }
+        } else if self
+            .browse_state(view)
+            .is_some_and(|s| matches!(s.filter, Filter::Group(_)))
+        {
+            ui.heading("This group is empty");
+            ui.label("Right-click stickers in your library or Discover and choose this group.");
         } else {
             ui.heading("No stickers in this collection");
             ui.label("Choose another pack or manage your stickers in the library.");
@@ -152,6 +163,7 @@ impl App {
     }
     pub(super) fn grid(&mut self, ui: &mut egui::Ui, items: &[LibrarySticker], view: View) {
         let picker = view == View::Picker;
+        let selectable = matches!(view, View::Preview | View::Discover);
         if items.is_empty() {
             self.empty_grid(ui, view);
             return;
@@ -188,16 +200,18 @@ impl App {
                 .iter()
                 .any(|k| i.key_pressed(*k))
             });
-        let mut scroll = egui::ScrollArea::vertical().id_salt(if picker {
-            "picker-grid"
-        } else {
-            "library-grid"
+        let mut scroll = egui::ScrollArea::vertical().id_salt(match view {
+            View::Picker => "picker-grid",
+            View::Discover => "discover-grid",
+            _ => "library-grid",
         });
         if navigation {
             scroll = scroll.vertical_scroll_offset(
                 (self.picker_state.selected / columns) as f32 * (80. + ui.spacing().item_spacing.y),
             );
         }
+        // One query per frame instead of one per visible tile.
+        let favorites = self.store.favorite_keys().unwrap_or_default();
         scroll.show_rows(ui, 80., items.len().div_ceil(columns), |ui, rows| {
             for row in rows {
                 ui.horizontal(|ui| {
@@ -212,7 +226,8 @@ impl App {
                                     item.provider,
                                     &item.sticker.url,
                                     80.,
-                                    picker && n == self.picker_state.selected,
+                                    (picker && n == self.picker_state.selected)
+                                        || (selectable && self.selection.contains(item)),
                                 );
                                 r.response.widget_info(|| {
                                     egui::WidgetInfo::labeled(
@@ -225,14 +240,34 @@ impl App {
                                     "{}\n{} · {}\nRight-click for more",
                                     item.sticker.label, item.pack_title, item.provider
                                 ));
-                                if r.activated {
+                                let favorite = favorites
+                                    .contains(&(item.pack_key.clone(), item.sticker.id.clone()));
+                                self.favorite_star(ui, &r.response, item, favorite);
+                                let modifiers = ui.input(|i| i.modifiers);
+                                if r.activated
+                                    && selectable
+                                    && (self.selection.active
+                                        || modifiers.command
+                                        || modifiers.shift)
+                                {
+                                    self.selection.click(items, n, modifiers.shift);
+                                } else if r.activated {
                                     if picker {
                                         self.picker_state.selected = n;
                                     }
                                     self.begin_sticker_copy(item.clone(), CopyMode::Auto, picker);
                                 }
-                                r.response
-                                    .context_menu(|ui| self.sticker_menu(ui, item, view));
+                                r.response.context_menu(|ui| {
+                                    let chosen = self.selection.chosen(items);
+                                    if selectable
+                                        && chosen.len() > 1
+                                        && self.selection.contains(item)
+                                    {
+                                        self.selection_menu(ui, &chosen);
+                                    } else {
+                                        self.sticker_menu(ui, item, view);
+                                    }
+                                });
                             });
                         });
                     }
@@ -249,21 +284,26 @@ impl App {
             self.begin_sticker_copy(item.clone(), CopyMode::Original, view == View::Picker);
             ui.close();
         }
+        if item.provider == Provider::Giphy && ui.button("Copy GIF link").clicked() {
+            ui.ctx().copy_text(item.sticker.url.clone());
+            self.message("GIF link copied", false);
+            ui.close();
+        }
         ui.separator();
-        let favorite = match self
+        let saved = match self
             .store
             .is_sticker_favorite(&item.pack_key, &item.sticker.id)
         {
-            Ok(Some(value)) => value,
-            Ok(None) => {
-                ui.label("Add this pack to your library to manage its stickers.");
-                return;
-            }
+            Ok(saved) => saved,
             Err(e) => {
                 ui.label(format!("Cannot read sticker: {e}"));
                 return;
             }
         };
+        // An unsaved sticker (pack preview or GIPHY result) is kept on its own
+        // the first time it is favorited or added to a group.
+        let keep = saved.is_none();
+        let favorite = saved.unwrap_or(false);
         if ui
             .button(if favorite {
                 "Unfavorite sticker"
@@ -272,14 +312,13 @@ impl App {
             })
             .clicked()
         {
-            let result =
-                self.store
-                    .set_sticker_favorite(&item.pack_key, &item.sticker.id, !favorite);
+            let result = self.set_favorites(std::slice::from_ref(item), !favorite);
             self.report(result, "Sticker favorite updated");
             ui.close();
         }
-        if ui
-            .button("Remove sticker from library")
+        if !keep
+            && ui
+                .button("Remove sticker from library")
             .on_hover_text(
                 "Removes it from groups and Recent too. Reimport the source pack to restore it.",
             )
@@ -296,33 +335,36 @@ impl App {
         ui.separator();
         ui.label("Add to group");
         if self.groups.is_empty() {
-            ui.label("Create a custom group in Library → Groups.");
+            ui.label("Create a group with + next to Custom groups in the library sidebar.");
         }
 
         for group in self.groups.clone() {
             if ui.button(&group.name).clicked() {
                 let result = self
-                    .store
-                    .add_to_group(group.id, &item.pack_key, &item.sticker.id);
+                    .keep_unsaved(std::slice::from_ref(item))
+                    .and_then(|()| {
+                        self.store
+                            .add_to_group(group.id, &item.pack_key, &item.sticker.id)
+                    });
                 self.report(result, "Added to group");
+                // The group's cover is its first sticker.
+                self.refresh();
                 ui.close();
             }
         }
-        let group = match view {
-            View::Group(id) => Some(id),
-            _ => self
-                .browse_state(view)
-                .and_then(|state| match state.filter {
-                    Filter::Group(id) => Some(id),
-                    _ => None,
-                }),
-        };
+        let group = self
+            .browse_state(view)
+            .and_then(|state| match state.filter {
+                Filter::Group(id) => Some(id),
+                _ => None,
+            });
         if let Some(id) = group {
             if ui.button("Move earlier").clicked() {
                 let r = self
                     .store
                     .move_in_group(id, &item.pack_key, &item.sticker.id, -1);
                 self.report(r, "Order updated");
+                self.refresh();
                 ui.close();
             }
             if ui.button("Move later").clicked() {
@@ -330,6 +372,7 @@ impl App {
                     .store
                     .move_in_group(id, &item.pack_key, &item.sticker.id, 1);
                 self.report(r, "Order updated");
+                self.refresh();
                 ui.close();
             }
             if ui.button("Remove from group").clicked() {
@@ -337,9 +380,131 @@ impl App {
                     .store
                     .remove_from_group(id, &item.pack_key, &item.sticker.id);
                 self.report(r, "Removed from group");
+                self.refresh();
                 ui.close();
             }
         }
+    }
+}
+
+impl App {
+    fn source_pack(&self, item: &LibrarySticker) -> Option<Pack> {
+        if item.provider == Provider::Giphy {
+            return Some(crate::providers::giphy::collection());
+        }
+        self.preview
+            .as_ref()
+            .filter(|p| p.reference.key() == item.pack_key)
+            .cloned()
+    }
+    /// Unsaved stickers are kept on their own before being favorited.
+    pub(super) fn set_favorites(
+        &mut self,
+        items: &[LibrarySticker],
+        favorite: bool,
+    ) -> anyhow::Result<()> {
+        self.keep_unsaved(items)?;
+        items.iter().try_for_each(|i| {
+            self.store
+                .set_sticker_favorite(&i.pack_key, &i.sticker.id, favorite)
+        })
+    }
+    /// A star in the tile's corner: filled for favorites, outlined on hover.
+    fn favorite_star(
+        &mut self,
+        ui: &mut egui::Ui,
+        tile: &egui::Response,
+        item: &LibrarySticker,
+        favorite: bool,
+    ) {
+        let rect = egui::Rect::from_center_size(
+            tile.rect.right_top() + egui::vec2(-12., 12.),
+            Vec2::splat(20.),
+        );
+        // Registered after the tile, so it takes the click in its corner.
+        let response = ui.interact(rect, tile.id.with("favorite"), egui::Sense::click());
+        let action = if favorite {
+            "Remove from favorites"
+        } else {
+            "Add to favorites"
+        };
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                true,
+                format!("{action}: {}", item.sticker.label),
+            )
+        });
+        if !(favorite || tile.hovered() || response.hovered()) {
+            return;
+        }
+        let painter = ui.painter();
+        painter.circle_filled(
+            rect.center(),
+            10.,
+            Color32::from_black_alpha(if response.hovered() { 140 } else { 90 }),
+        );
+        super::design::star(painter, rect.center(), 7., favorite);
+        if response.on_hover_text(action).clicked() {
+            let result = self.set_favorites(std::slice::from_ref(item), !favorite);
+            self.report(
+                result,
+                if favorite {
+                    "Removed from favorites"
+                } else {
+                    "Added to favorites"
+                },
+            );
+        }
+    }
+    /// Favorites and groups reference saved stickers. Unsaved stickers are
+    /// saved into their source pack without its other stickers, then
+    /// downloaded for offline use; cached media is reused.
+    pub(super) fn keep_unsaved(&mut self, items: &[LibrarySticker]) -> anyhow::Result<()> {
+        // Each entry holds only the stickers being kept from that pack.
+        let mut sources: Vec<Pack> = Vec::new();
+        for item in items {
+            if self
+                .store
+                .is_sticker_favorite(&item.pack_key, &item.sticker.id)?
+                .is_some()
+            {
+                continue;
+            }
+            if let Some(pack) = sources
+                .iter_mut()
+                .find(|p| p.reference.key() == item.pack_key)
+            {
+                pack.stickers.push(item.sticker.clone());
+                continue;
+            }
+            let pack = self
+                .source_pack(item)
+                .context("Open this sticker's pack again to manage it")?;
+            sources.push(Pack {
+                stickers: vec![item.sticker.clone()],
+                ..pack
+            });
+        }
+        for pack in &sources {
+            let collection = Pack {
+                stickers: Vec::new(),
+                ..pack.clone()
+            };
+            self.store.add_stickers(collection, &pack.stickers)?;
+        }
+        if !sources.is_empty() {
+            self.refresh();
+        }
+        for pack in sources {
+            let title = match pack.stickers.as_slice() {
+                [one] => one.label.clone(),
+                many => format!("{} stickers", many.len()),
+            };
+            self.downloading_pack = true;
+            self.services.download_pack(Pack { title, ..pack });
+        }
+        Ok(())
     }
 }
 

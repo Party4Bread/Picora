@@ -25,16 +25,16 @@ Windows 이모지 패널처럼 **Ctrl+Shift+Space**로 Picora를 열 수 있습�
 | --- | --- | --- |
 | [디시인사이드](https://dccon.dcinside.com/) | 팩 검색 또는 팩 URL로 가져오기 | 필요 없음 |
 | [아카라이브(arca.live)](https://arca.live/e/) | 팩 검색 또는 팩 URL로 가져오기 | 필요하며, 웹사이트 인증이 표시될 수 있음 |
-| [GIPHY](https://giphy.com/) | 온라인 GIF·스티커 검색, 정지 이미지 또는 GIF 링크 복사 | 개인 GIPHY API 키 |
+| [GIPHY](https://giphy.com/) | GIF·스티커 개별 복사, 즐겨찾기, 그룹 추가 | 개인 GIPHY API 키 |
 
-GIPHY는 **Library → GIPHY**에서 개인 API 키를 입력한 후 **Use and save key**로 설정합니다. 키는 운영체제의 보안 저장소에 보관됩니다. GIPHY 검색 결과는 오프라인 팩과 분리되며, 이미지를 라이브러리 캐시에 저장하지 않습니다. 요청 한도는 API 요금제에 따라 다릅니다. 표시되는 로고는 [GIPHY 공식 표시 자료](https://media.giphy.com/giphy-attribution-marks.zip)입니다.
+GIPHY는 **Library → Accounts**에서 개인 API 키를 입력한 후 **Use and save key**로 설정합니다. 키는 운영체제의 보안 저장소에 보관됩니다. 이후 **Discover**에서 **GIPHY**를 선택해 스티커나 GIF를 검색합니다(검색어가 없으면 인기 항목 표시). 결과를 클릭하면 복사되고, 우클릭으로 즐겨찾기하거나 그룹에 추가할 수 있습니다. 추가한 항목은 **Saved from GIPHY** 컬렉션에 저장되어 다른 스티커처럼 피커, Recent, 그룹에서 사용할 수 있습니다. 요청 한도는 API 요금제에 따라 다릅니다. 표시되는 로고는 [GIPHY 공식 표시 자료](https://media.giphy.com/giphy-attribution-marks.zip)입니다.
 
 ## 다운로드 및 설치
 
 | 플랫폼 | 다운로드 파일 | 설치 방법 |
 | --- | --- | --- |
 | Windows x64 | `picora-<version>-windows-x64-setup.exe` | 설치 프로그램을 실행합니다. 포터블 ZIP도 제공됩니다. |
-| macOS, Apple Silicon | `picora-<version>-macos-aarch64.dmg` | Picora를 응용 프로그램 폴더로 드래그합니다. |
+| macOS, Apple Silicon | `picora-<version>-macos-aarch64.dmg` | Picora를 응용 프로그램 폴더로 드래그합니다. 실행하면 라이브러리가 열립니다. |
 | Linux x64 | `picora-<version>-linux-x86_64.tar.gz` | 압축을 풀고 `Picora/picora --library`를 실행합니다. |
 
 파일은 [GitHub Releases](https://github.com/Party4Bread/Picora/releases/latest)에서 다운로드할 수 있습니다.
@@ -47,8 +47,8 @@ GIPHY는 **Library → GIPHY**에서 개인 API 키를 입력한 후 **Use and s
 
 ## 빠른 시작
 
-1. 트레이 또는 메뉴 막대 아이콘에서 **Library → Discover**를 엽니다. 팩을 검색하거나 저장소 URL을 붙여넣고 **Add pack to favorites**를 선택합니다.
-2. **Groups**에서 그룹을 만듭니다. 스티커를 마우스 오른쪽 버튼으로 클릭하면 즐겨찾기 추가, 그룹 지정, 라이브러리에서 제거가 가능합니다.
+1. 트레이 또는 메뉴 막대 아이콘에서 **Library → Discover**를 엽니다. 팩을 검색하거나 저장소 URL을 붙여넣고, 오프라인으로 보관하려면 **Download pack**, 즐겨찾기에 추가하려면 **Favorite pack**을 선택합니다.
+2. 라이브러리 사이드바의 **Custom groups** 옆 **+**로 그룹을 만들고, 그룹을 우클릭해 이름을 바꾸거나 삭제합니다. 스티커의 별을 클릭하면 즐겨찾기에 추가됩니다. 스티커를 마우스 오른쪽 버튼으로 클릭하면 그룹 지정, 라이브러리에서 제거가 가능합니다. 팩 미리보기나 GIPHY 검색 결과에서는 팩 전체를 추가하지 않고 해당 스티커만 추가할 수 있습니다. **Select**를 켜거나 Ctrl/Cmd-클릭(범위는 Shift-클릭)으로 여러 스티커를 고른 뒤, 그중 하나를 우클릭하면 한 번에 그룹에 추가할 수 있습니다. 그룹은 피커 하단에 아이콘으로도 표시됩니다.
 3. 채팅이나 편집기를 선택하고 **Ctrl+Shift+Space**를 누른 뒤 스티커를 선택합니다. 자동 붙여넣기가 되지 않으면 **Ctrl+V** 또는 **Cmd+V**를 사용하세요.
 
 창을 닫아도 Picora는 트레이에서 계속 실행됩니다. 완전히 종료하려면 **Quit**을 선택하세요. 라이브러리 창에서는 자동 붙여넣기 없이 복사만 합니다. 로그인 시 자동 실행은 직접 켜야 합니다.
@@ -115,6 +115,8 @@ PowerShell에서는 다음과 같이 실행합니다.
 $env:PICORA_DATA_DIR = "$PWD\test-data"
 cargo run --locked -- --library
 ```
+
+Picora가 갑자기 종료되면 데이터 폴더의 `crash.log`에 오류가 기록됩니다. **Settings → Open data folder**로 폴더를 열고 버그 신고에 이 파일을 첨부해 주세요.
 
 ### 테스트와 패키징
 

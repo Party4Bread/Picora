@@ -108,6 +108,15 @@ impl App {
                         Err(e) => self.message(format!("{e:#}"), true),
                     }
                 }
+                Event::Giphy(id, result) => if id == self.catalog_id { self.giphy_results(result); },
+                Event::GiphyKey(result) => self.giphy_key_loaded(result),
+                Event::GiphyKeyStored(result) => {
+                    self.giphy.key_loading = false;
+                    match result {
+                        Ok(s) => self.message(s, false),
+                        Err(e) => self.message(format!("{e:#}"), true),
+                    }
+                }
                 Event::PackDownloaded(result) => {
                     self.downloading_pack = false;
                     match result {
