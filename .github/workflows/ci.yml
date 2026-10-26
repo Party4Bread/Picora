@@ -99,7 +99,40 @@ jobs:
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo build --locked --release
-      - name: Package unsigned desktop build
+      - name: Load macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        shell: bash
+        run: |
+          # Published builds must keep the same certificate, or macOS drops
+          # users' Accessibility permission. Fork PRs have no secrets and use
+          # an ad-hoc signature.
+          if [ -z "$SIGNING_P12" ]; then
+            if [ "$GITHUB_EVENT_NAME" = push ]; then
+              echo "::error::MACOS_SIGNING_P12 is required for published macOS builds"
+              exit 1
+            fi
+            echo "No signing certificate available; using an ad-hoc signature"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/picora-signing.keychain-db"
+          keychain_password=$(openssl rand -hex 24)
+          printf '%s' "$SIGNING_P12" | base64 --decode > "$RUNNER_TEMP/picora-signing.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/picora-signing.p12" -k "$keychain" -P "$SIGNING_P12_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/picora-signing.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # The self-signed certificate is not trusted, so select it by hash.
+          identity=$(security find-certificate -c "Picora Release Signing" -Z "$keychain" | awk '/SHA-1 hash:/ {print $3; exit}')
+          test -n "$identity"
+          echo "PICORA_MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "PICORA_MACOS_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      - name: Package desktop build
         run: python scripts/package.py
       - name: Verify macOS bundle and packaged launch
         if: runner.os == 'macOS'
