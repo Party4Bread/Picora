@@ -1,0 +1,146 @@
+_version: 2
+# Sticker grids, selection, and GIPHY. Keys are the English interface text.
+# Keep every key and value double-quoted and translations on one `  ko: "..."`
+# line; src/i18n.rs checks this layout.
+"Retry":
+  ko: "다시 시도"
+"No GIPHY results":
+  ko: "GIPHY 검색 결과가 없습니다"
+"Try another search, or clear it to see what is trending.":
+  ko: "다른 검색어를 입력하거나, 검색어를 지워 인기 항목을 확인하세요."
+"No matching stickers":
+  ko: "일치하는 스티커가 없습니다"
+"Try another search or clear it to see this collection.":
+  ko: "다른 검색어를 입력하거나, 검색어를 지워 이 모음을 확인하세요."
+"Clear search":
+  ko: "검색어 지우기"
+"Your library is empty":
+  ko: "라이브러리가 비어 있습니다"
+"Browse a pack and add it to your library.":
+  ko: "팩을 둘러보고 라이브러리에 추가하세요."
+"Browse repositories":
+  ko: "저장소 둘러보기"
+"This group is empty":
+  ko: "이 그룹은 비어 있습니다"
+"Right-click stickers in your library or Discover and choose this group.":
+  ko: "라이브러리나 둘러보기에서 스티커를 우클릭한 뒤 이 그룹을 선택하세요."
+"No stickers in this collection":
+  ko: "이 모음에 스티커가 없습니다"
+"Choose another pack or manage your stickers in the library.":
+  ko: "다른 팩을 선택하거나 라이브러리에서 스티커를 관리하세요."
+"Show all stickers":
+  ko: "모든 스티커 보기"
+"Right-click for more":
+  ko: "우클릭하면 더 많은 옵션이 표시됩니다"
+"Copy still image":
+  ko: "정지 이미지 복사"
+"Paste original file":
+  ko: "원본 파일 붙여넣기"
+"Copy GIF link":
+  ko: "GIF 링크 복사"
+"GIF link copied":
+  ko: "GIF 링크를 복사했습니다"
+"Cannot read sticker: %{error}":
+  ko: "스티커를 읽을 수 없습니다: %{error}"
+"Unfavorite sticker":
+  ko: "스티커를 즐겨찾기에서 제거"
+"Favorite sticker":
+  ko: "스티커를 즐겨찾기에 추가"
+"Sticker favorite updated":
+  ko: "스티커 즐겨찾기를 변경했습니다"
+"Remove sticker from library":
+  ko: "라이브러리에서 스티커 제거"
+"Removes it from groups and Recent too. Reimport the source pack to restore it.":
+  ko: "그룹과 최근 사용에서도 제거됩니다. 원래 팩을 다시 가져오면 복원할 수 있습니다."
+"Sticker removed. Reimport its source pack to restore it.":
+  ko: "스티커를 제거했습니다. 원래 팩을 다시 가져오면 복원할 수 있습니다."
+"Add to group":
+  ko: "그룹에 추가"
+"Create a group with + next to Custom groups in the library sidebar.":
+  ko: "라이브러리 사이드바의 사용자 그룹 옆 +를 눌러 그룹을 만드세요."
+"Added to group":
+  ko: "그룹에 추가했습니다"
+"Move earlier":
+  ko: "앞으로 이동"
+"Move later":
+  ko: "뒤로 이동"
+"Order updated":
+  ko: "순서를 변경했습니다"
+"Remove from group":
+  ko: "그룹에서 제거"
+"Removed from group":
+  ko: "그룹에서 제거했습니다"
+"Remove from favorites":
+  ko: "즐겨찾기에서 제거"
+"Add to favorites":
+  ko: "즐겨찾기에 추가"
+"Remove from favorites: %{label}":
+  ko: "즐겨찾기에서 제거: %{label}"
+"Add to favorites: %{label}":
+  ko: "즐겨찾기에 추가: %{label}"
+"Removed from favorites":
+  ko: "즐겨찾기에서 제거했습니다"
+"Added to favorites":
+  ko: "즐겨찾기에 추가했습니다"
+"Open this sticker's pack again to manage it":
+  ko: "이 스티커를 관리하려면 스티커의 팩을 다시 여세요"
+"%{count} stickers":
+  ko: "스티커 %{count}개"
+"Select":
+  ko: "선택"
+"Click stickers to select them. Ctrl/Cmd-click also selects, and Shift-click selects a range.":
+  ko: "스티커를 클릭해 선택합니다. Ctrl/Cmd-클릭으로도 선택할 수 있고, Shift-클릭으로 범위를 선택합니다."
+"%{count} selected":
+  ko: "%{count}개 선택됨"
+"Select all":
+  ko: "모두 선택"
+"Clear":
+  ko: "선택 해제"
+"Right-click a selected sticker to add them all to a group.":
+  ko: "선택한 스티커 중 하나를 우클릭하면 모두 한 번에 그룹에 추가할 수 있습니다."
+"%{count} stickers selected":
+  ko: "스티커 %{count}개 선택됨"
+"Unfavorite selected":
+  ko: "선택 항목을 즐겨찾기에서 제거"
+"%{count} stickers removed from favorites":
+  ko: "스티커 %{count}개를 즐겨찾기에서 제거했습니다"
+"Favorite selected":
+  ko: "선택 항목을 즐겨찾기에 추가"
+"%{count} stickers favorited":
+  ko: "스티커 %{count}개를 즐겨찾기에 추가했습니다"
+"Add selected to group":
+  ko: "선택 항목을 그룹에 추가"
+"Added %{count} stickers to %{group}":
+  ko: "스티커 %{count}개를 %{group}에 추가했습니다"
+"Saved GIPHY key could not be loaded. Enter it again in Accounts. %{error}":
+  ko: "저장된 GIPHY 키를 불러오지 못했습니다. 계정에서 다시 입력하세요. %{error}"
+"Click to copy · Right-click to favorite or add to a group":
+  ko: "클릭해 복사 · 우클릭해 즐겨찾기에 추가하거나 그룹에 추가"
+"Stickers":
+  ko: "스티커"
+"GIFs":
+  ko: "GIF"
+"Add your GIPHY API key":
+  ko: "GIPHY API 키를 추가하세요"
+"GIPHY search uses your own API key. Add it in Accounts to search GIFs and stickers.":
+  ko: "GIPHY 검색에는 개인 API 키가 필요합니다. 계정에서 키를 추가하면 GIF와 스티커를 검색할 수 있습니다."
+"Open Accounts":
+  ko: "계정 열기"
+"Loading key…":
+  ko: "키를 불러오는 중…"
+"No API key":
+  ko: "API 키 없음"
+"API key ready":
+  ko: "API 키 준비됨"
+"Search GIFs and stickers in Discover with your own GIPHY API key. Keep results by favoriting them or adding them to a group.":
+  ko: "개인 GIPHY API 키로 둘러보기에서 GIF와 스티커를 검색합니다. 결과를 즐겨찾기나 그룹에 추가하면 보관됩니다."
+"GIPHY API key":
+  ko: "GIPHY API 키"
+"Use and save key":
+  ko: "키 사용 및 저장"
+"Forget key":
+  ko: "키 삭제"
+"Get an API key":
+  ko: "API 키 받기"
+"Your key is sent only to GIPHY and saved in OS-protected storage. Search limits depend on your key's plan.":
+  ko: "키는 GIPHY에만 전송되며 운영체제의 보안 저장소에 저장됩니다. 검색 한도는 키의 요금제에 따라 다릅니다."

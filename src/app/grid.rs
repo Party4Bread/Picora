@@ -4,6 +4,7 @@ use super::{
 };
 use crate::model::Pack;
 use anyhow::Context;
+use rust_i18n::t;
 
 pub(super) struct Thumbnail {
     pub response: egui::Response,
@@ -80,7 +81,7 @@ impl App {
             ui.painter().text(
                 response.rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "Retry",
+                t!("Retry"),
                 egui::FontId::proportional(12.),
                 ui.visuals().error_fg_color,
             );
@@ -121,23 +122,25 @@ impl App {
     fn empty_grid(&mut self, ui: &mut egui::Ui, view: View) {
         ui.add_space(32.);
         if view == View::Discover {
-            ui.heading("No GIPHY results");
-            ui.label("Try another search, or clear it to see what is trending.");
+            ui.heading(t!("No GIPHY results"));
+            ui.label(t!(
+                "Try another search, or clear it to see what is trending."
+            ));
         } else if self
             .browse_state(view)
             .is_some_and(|s| !s.search.trim().is_empty())
         {
-            ui.heading("No matching stickers");
-            ui.label("Try another search or clear it to see this collection.");
-            if ui.button("Clear search").clicked()
+            ui.heading(t!("No matching stickers"));
+            ui.label(t!("Try another search or clear it to see this collection."));
+            if ui.button(t!("Clear search")).clicked()
                 && let Some(state) = self.browse_state_mut(view)
             {
                 state.search.clear();
             }
         } else if self.packs.is_empty() {
-            ui.heading("Your library is empty");
-            ui.label("Browse a pack and add it to your library.");
-            if ui.button("Browse repositories").clicked() {
+            ui.heading(t!("Your library is empty"));
+            ui.label(t!("Browse a pack and add it to your library."));
+            if ui.button(t!("Browse repositories")).clicked() {
                 self.tab = Tab::Browse;
                 self.open_library();
                 self.browse();
@@ -146,12 +149,16 @@ impl App {
             .browse_state(view)
             .is_some_and(|s| matches!(s.filter, Filter::Group(_)))
         {
-            ui.heading("This group is empty");
-            ui.label("Right-click stickers in your library or Discover and choose this group.");
+            ui.heading(t!("This group is empty"));
+            ui.label(t!(
+                "Right-click stickers in your library or Discover and choose this group."
+            ));
         } else {
-            ui.heading("No stickers in this collection");
-            ui.label("Choose another pack or manage your stickers in the library.");
-            if ui.button("Show all stickers").clicked() {
+            ui.heading(t!("No stickers in this collection"));
+            ui.label(t!(
+                "Choose another pack or manage your stickers in the library."
+            ));
+            if ui.button(t!("Show all stickers")).clicked() {
                 if let Some(state) = self.browse_state_mut(view) {
                     state.filter = Filter::All;
                 } else {
@@ -237,8 +244,11 @@ impl App {
                                     )
                                 });
                                 r.response.clone().on_hover_text(format!(
-                                    "{}\n{} · {}\nRight-click for more",
-                                    item.sticker.label, item.pack_title, item.provider
+                                    "{}\n{} · {}\n{}",
+                                    item.sticker.label,
+                                    item.pack_title,
+                                    item.provider,
+                                    t!("Right-click for more")
                                 ));
                                 let favorite = favorites
                                     .contains(&(item.pack_key.clone(), item.sticker.id.clone()));
@@ -276,17 +286,17 @@ impl App {
         });
     }
     fn sticker_menu(&mut self, ui: &mut egui::Ui, item: &LibrarySticker, view: View) {
-        if ui.button("Copy still image").clicked() {
+        if ui.button(t!("Copy still image")).clicked() {
             self.begin_sticker_copy(item.clone(), CopyMode::Still, false);
             ui.close();
         }
-        if ui.button("Paste original file").clicked() {
+        if ui.button(t!("Paste original file")).clicked() {
             self.begin_sticker_copy(item.clone(), CopyMode::Original, view == View::Picker);
             ui.close();
         }
-        if item.provider == Provider::Giphy && ui.button("Copy GIF link").clicked() {
+        if item.provider == Provider::Giphy && ui.button(t!("Copy GIF link")).clicked() {
             ui.ctx().copy_text(item.sticker.url.clone());
-            self.message("GIF link copied", false);
+            self.message(t!("GIF link copied"), false);
             ui.close();
         }
         ui.separator();
@@ -296,7 +306,7 @@ impl App {
         {
             Ok(saved) => saved,
             Err(e) => {
-                ui.label(format!("Cannot read sticker: {e}"));
+                ui.label(t!("Cannot read sticker: %{error}", error = e));
                 return;
             }
         };
@@ -306,36 +316,38 @@ impl App {
         let favorite = saved.unwrap_or(false);
         if ui
             .button(if favorite {
-                "Unfavorite sticker"
+                t!("Unfavorite sticker")
             } else {
-                "Favorite sticker"
+                t!("Favorite sticker")
             })
             .clicked()
         {
             let result = self.set_favorites(std::slice::from_ref(item), !favorite);
-            self.report(result, "Sticker favorite updated");
+            self.report(result, &t!("Sticker favorite updated"));
             ui.close();
         }
         if !keep
             && ui
-                .button("Remove sticker from library")
-            .on_hover_text(
-                "Removes it from groups and Recent too. Reimport the source pack to restore it.",
-            )
-            .clicked()
+                .button(t!("Remove sticker from library"))
+                .on_hover_text(t!(
+                    "Removes it from groups and Recent too. Reimport the source pack to restore it."
+                ))
+                .clicked()
         {
             let result = self.store.remove_sticker(&item.pack_key, &item.sticker.id);
             self.report(
                 result,
-                "Sticker removed. Reimport its source pack to restore it.",
+                &t!("Sticker removed. Reimport its source pack to restore it."),
             );
             self.refresh();
             ui.close();
         }
         ui.separator();
-        ui.label("Add to group");
+        ui.label(t!("Add to group"));
         if self.groups.is_empty() {
-            ui.label("Create a group with + next to Custom groups in the library sidebar.");
+            ui.label(t!(
+                "Create a group with + next to Custom groups in the library sidebar."
+            ));
         }
 
         for group in self.groups.clone() {
@@ -346,7 +358,7 @@ impl App {
                         self.store
                             .add_to_group(group.id, &item.pack_key, &item.sticker.id)
                     });
-                self.report(result, "Added to group");
+                self.report(result, &t!("Added to group"));
                 // The group's cover is its first sticker.
                 self.refresh();
                 ui.close();
@@ -359,27 +371,27 @@ impl App {
                 _ => None,
             });
         if let Some(id) = group {
-            if ui.button("Move earlier").clicked() {
+            if ui.button(t!("Move earlier")).clicked() {
                 let r = self
                     .store
                     .move_in_group(id, &item.pack_key, &item.sticker.id, -1);
-                self.report(r, "Order updated");
+                self.report(r, &t!("Order updated"));
                 self.refresh();
                 ui.close();
             }
-            if ui.button("Move later").clicked() {
+            if ui.button(t!("Move later")).clicked() {
                 let r = self
                     .store
                     .move_in_group(id, &item.pack_key, &item.sticker.id, 1);
-                self.report(r, "Order updated");
+                self.report(r, &t!("Order updated"));
                 self.refresh();
                 ui.close();
             }
-            if ui.button("Remove from group").clicked() {
+            if ui.button(t!("Remove from group")).clicked() {
                 let r = self
                     .store
                     .remove_from_group(id, &item.pack_key, &item.sticker.id);
-                self.report(r, "Removed from group");
+                self.report(r, &t!("Removed from group"));
                 self.refresh();
                 ui.close();
             }
@@ -423,18 +435,21 @@ impl App {
         );
         // Registered after the tile, so it takes the click in its corner.
         let response = ui.interact(rect, tile.id.with("favorite"), egui::Sense::click());
-        let action = if favorite {
-            "Remove from favorites"
-        } else {
-            "Add to favorites"
-        };
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Button,
-                true,
-                format!("{action}: {}", item.sticker.label),
+        let (action, label) = if favorite {
+            (
+                t!("Remove from favorites"),
+                t!(
+                    "Remove from favorites: %{label}",
+                    label = item.sticker.label
+                ),
             )
-        });
+        } else {
+            (
+                t!("Add to favorites"),
+                t!("Add to favorites: %{label}", label = item.sticker.label),
+            )
+        };
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
         if !(favorite || tile.hovered() || response.hovered()) {
             return;
         }
@@ -449,10 +464,10 @@ impl App {
             let result = self.set_favorites(std::slice::from_ref(item), !favorite);
             self.report(
                 result,
-                if favorite {
-                    "Removed from favorites"
+                &if favorite {
+                    t!("Removed from favorites")
                 } else {
-                    "Added to favorites"
+                    t!("Added to favorites")
                 },
             );
         }
@@ -480,7 +495,7 @@ impl App {
             }
             let pack = self
                 .source_pack(item)
-                .context("Open this sticker's pack again to manage it")?;
+                .with_context(|| t!("Open this sticker's pack again to manage it"))?;
             sources.push(Pack {
                 stickers: vec![item.sticker.clone()],
                 ..pack
@@ -499,7 +514,7 @@ impl App {
         for pack in sources {
             let title = match pack.stickers.as_slice() {
                 [one] => one.label.clone(),
-                many => format!("{} stickers", many.len()),
+                many => t!("%{count} stickers", count = many.len()).into_owned(),
             };
             self.downloading_pack = true;
             self.services.download_pack(Pack { title, ..pack });

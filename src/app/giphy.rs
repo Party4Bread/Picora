@@ -1,5 +1,6 @@
 use super::{App, LibrarySticker, Provider, Result, RichText, Tab, View, egui};
 use crate::providers::giphy::{self, Kind};
+use rust_i18n::t;
 
 pub(super) struct State {
     pub(super) key: String,
@@ -35,8 +36,9 @@ impl App {
                 }
             }
             Err(error) => self.message(
-                format!(
-                    "Saved GIPHY key could not be loaded. Enter it again in Accounts. {error:#}"
+                t!(
+                    "Saved GIPHY key could not be loaded. Enter it again in Accounts. %{error}",
+                    error = format!("{error:#}")
                 ),
                 true,
             ),
@@ -60,9 +62,9 @@ impl App {
                     .collect();
                 self.message(
                     if self.giphy.results.is_empty() {
-                        "No GIPHY results"
+                        t!("No GIPHY results")
                     } else {
-                        "Click to copy · Right-click to favorite or add to a group"
+                        t!("Click to copy · Right-click to favorite or add to a group")
                     },
                     false,
                 );
@@ -104,7 +106,7 @@ impl App {
     pub(super) fn giphy_kind(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let mut changed = false;
-            for (kind, label) in [(Kind::Stickers, "Stickers"), (Kind::Gifs, "GIFs")] {
+            for (kind, label) in [(Kind::Stickers, t!("Stickers")), (Kind::Gifs, t!("GIFs"))] {
                 changed |= ui
                     .selectable_value(&mut self.giphy.kind, kind, label)
                     .changed();
@@ -123,17 +125,19 @@ impl App {
         }
         if self.giphy.key.is_empty() {
             ui.add_space(12.);
-            ui.heading("Add your GIPHY API key");
-            ui.label("GIPHY search uses your own API key. Add it in Accounts to search GIFs and stickers.");
-            if ui.button("Open Accounts").clicked() {
+            ui.heading(t!("Add your GIPHY API key"));
+            ui.label(t!("GIPHY search uses your own API key. Add it in Accounts to search GIFs and stickers."));
+            if ui.button(t!("Open Accounts")).clicked() {
                 self.tab = Tab::Accounts;
             }
             return;
         }
         ui.label(
-            RichText::new("Click to copy · Right-click to favorite or add to a group")
-                .small()
-                .weak(),
+            RichText::new(t!(
+                "Click to copy · Right-click to favorite or add to a group"
+            ))
+            .small()
+            .weak(),
         );
         if !self.browsing {
             let items = self.giphy.results.clone();
@@ -145,26 +149,26 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.strong("GIPHY");
             ui.label(if self.giphy.key_loading {
-                "Loading key…"
+                t!("Loading key…")
             } else if self.giphy.key.is_empty() {
-                "No API key"
+                t!("No API key")
             } else {
-                "API key ready"
+                t!("API key ready")
             });
         });
         self.giphy_attribution(ui);
-        ui.label("Search GIFs and stickers in Discover with your own GIPHY API key. Keep results by favoriting them or adding them to a group.");
+        ui.label(t!("Search GIFs and stickers in Discover with your own GIPHY API key. Keep results by favoriting them or adding them to a group."));
         ui.add_enabled_ui(!self.giphy.key_loading, |ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.giphy.key_input)
                     .password(true)
-                    .hint_text("GIPHY API key"),
+                    .hint_text(t!("GIPHY API key")),
             );
             ui.horizontal_wrapped(|ui| {
                 if ui
                     .add_enabled(
                         !self.giphy.key_input.trim().is_empty(),
-                        egui::Button::new("Use and save key"),
+                        egui::Button::new(t!("Use and save key")),
                     )
                     .clicked()
                 {
@@ -174,7 +178,10 @@ impl App {
                     self.services.save_giphy_key(self.giphy.key.clone());
                 }
                 if ui
-                    .add_enabled(!self.giphy.key.is_empty(), egui::Button::new("Forget key"))
+                    .add_enabled(
+                        !self.giphy.key.is_empty(),
+                        egui::Button::new(t!("Forget key")),
+                    )
                     .clicked()
                 {
                     self.giphy.key.clear();
@@ -183,9 +190,12 @@ impl App {
                     self.giphy.results.clear();
                     self.services.forget_giphy_key();
                 }
-                ui.hyperlink_to("Get an API key", "https://developers.giphy.com/dashboard/");
+                ui.hyperlink_to(
+                    t!("Get an API key"),
+                    "https://developers.giphy.com/dashboard/",
+                );
             });
         });
-        ui.label("Your key is sent only to GIPHY and saved in OS-protected storage. Search limits depend on your key's plan.");
+        ui.label(t!("Your key is sent only to GIPHY and saved in OS-protected storage. Search limits depend on your key's plan."));
     }
 }

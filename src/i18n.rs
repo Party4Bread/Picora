@@ -114,7 +114,7 @@ mod tests {
                 } else if path.extension().is_some_and(|e| e == "rs") {
                     let text = std::fs::read_to_string(&path).unwrap();
                     // Split so this scanner does not find its own pattern.
-                    for (start, _) in text.match_indices(concat!("t!", "(\"")) {
+                    for (start, _) in text.match_indices(concat!("t!", "(")) {
                         // Skip macros that merely end in `t!`, such as `format!`.
                         if text[..start]
                             .chars()
@@ -123,7 +123,11 @@ mod tests {
                         {
                             continue;
                         }
-                        let literal = &text[start + 3..];
+                        // rustfmt moves long literals onto their own line.
+                        let literal = text[start + 3..].trim_start();
+                        if !literal.starts_with('"') {
+                            continue;
+                        }
                         let mut end = 1;
                         let bytes = literal.as_bytes();
                         while bytes[end] != b'"' {

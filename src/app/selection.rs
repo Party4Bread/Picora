@@ -1,5 +1,6 @@
 //! Discover sticker lists can select several stickers and keep them together.
 use super::{App, LibrarySticker, RichText, egui};
+use rust_i18n::t;
 use std::collections::HashSet;
 
 fn key(item: &LibrarySticker) -> (String, String) {
@@ -49,8 +50,8 @@ impl App {
         let count = self.selection.chosen(items).len();
         ui.horizontal_wrapped(|ui| {
             if ui
-                .selectable_label(self.selection.active, "Select")
-                .on_hover_text("Click stickers to select them. Ctrl/Cmd-click also selects, and Shift-click selects a range.")
+                .selectable_label(self.selection.active, t!("Select"))
+                .on_hover_text(t!("Click stickers to select them. Ctrl/Cmd-click also selects, and Shift-click selects a range."))
                 .clicked()
             {
                 self.selection.active = !self.selection.active;
@@ -59,37 +60,42 @@ impl App {
                 }
             }
             if self.selection.active || count > 0 {
-                ui.label(format!("{count} selected"));
-                if ui.button("Select all").clicked() {
+                ui.label(t!("%{count} selected", count = count));
+                if ui.button(t!("Select all")).clicked() {
                     self.selection.keys.extend(items.iter().map(key));
                 }
-                if count > 0 && ui.button("Clear").clicked() {
+                if count > 0 && ui.button(t!("Clear")).clicked() {
                     self.selection.clear();
                 }
             }
         });
         if count > 0 {
             ui.label(
-                RichText::new("Right-click a selected sticker to add them all to a group.")
-                    .small()
-                    .weak(),
+                RichText::new(t!(
+                    "Right-click a selected sticker to add them all to a group."
+                ))
+                .small()
+                .weak(),
             );
         }
     }
     pub(super) fn selection_menu(&mut self, ui: &mut egui::Ui, items: &[LibrarySticker]) {
         let count = items.len();
-        ui.label(RichText::new(format!("{count} stickers selected")).strong());
+        ui.label(RichText::new(t!("%{count} stickers selected", count = count)).strong());
         let favorites = self.store.favorite_keys().unwrap_or_default();
         let all_favorite = items
             .iter()
             .all(|i| favorites.contains(&(i.pack_key.clone(), i.sticker.id.clone())));
         let (label, done) = if all_favorite {
             (
-                "Unfavorite selected",
-                format!("{count} stickers removed from favorites"),
+                t!("Unfavorite selected"),
+                t!("%{count} stickers removed from favorites", count = count),
             )
         } else {
-            ("Favorite selected", format!("{count} stickers favorited"))
+            (
+                t!("Favorite selected"),
+                t!("%{count} stickers favorited", count = count),
+            )
         };
         if ui.button(label).clicked() {
             let result = self.set_favorites(items, !all_favorite);
@@ -97,9 +103,11 @@ impl App {
             ui.close();
         }
         ui.separator();
-        ui.label("Add selected to group");
+        ui.label(t!("Add selected to group"));
         if self.groups.is_empty() {
-            ui.label("Create a group with + next to Custom groups in the library sidebar.");
+            ui.label(t!(
+                "Create a group with + next to Custom groups in the library sidebar."
+            ));
         }
         for group in self.groups.clone() {
             if ui.button(&group.name).clicked() {
@@ -109,7 +117,14 @@ impl App {
                             .add_to_group(group.id, &i.pack_key, &i.sticker.id)
                     })
                 });
-                self.finish_selection(result, &format!("Added {count} stickers to {}", group.name));
+                self.finish_selection(
+                    result,
+                    &t!(
+                        "Added %{count} stickers to %{group}",
+                        count = count,
+                        group = group.name
+                    ),
+                );
                 ui.close();
             }
         }
