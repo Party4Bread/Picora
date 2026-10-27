@@ -25,6 +25,13 @@ def verify(archive):
         subprocess.run(['ditto', '-x', '-k', str(archive), str(root)], check=True)
         app = root / 'Picora/Picora.app'
         subprocess.run(['codesign', '--verify', '--deep', '--strict', '--verbose=2', str(app)], check=True)
+        if os.environ.get('PICORA_MACOS_SIGNING_IDENTITY', '-') != '-':
+            # A certificate-based requirement keeps Accessibility permission across updates.
+            details = subprocess.run(['codesign', '-d', '-r-', '--verbose=2', str(app)],
+                                     capture_output=True, text=True, check=True)
+            output = details.stdout + details.stderr
+            assert 'Authority=Picora Release Signing' in output, output
+            assert 'identifier "app.picora.desktop" and certificate' in output, output
         binary = app / 'Contents/MacOS' / info['CFBundleExecutable']
         env = dict(os.environ, PICORA_DATA_DIR=str(root / 'data'))
         with (root / 'launch.log').open('w+') as log:

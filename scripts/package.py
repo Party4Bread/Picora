@@ -1,4 +1,8 @@
-"""Create portable archives and an ad-hoc-signed macOS disk image from `cargo build --release`. No publishing."""
+"""Create portable archives and a signed macOS disk image from `cargo build --release`. No publishing.
+
+macOS bundles use the identity in PICORA_MACOS_SIGNING_IDENTITY (from the
+keychain in PICORA_MACOS_KEYCHAIN, if set), or an ad-hoc signature without one.
+"""
 from pathlib import Path
 import os
 import platform
@@ -26,8 +30,16 @@ if system == "Darwin":
     with (app / "Info.plist").open("wb") as f:
         plistlib.dump({"CFBundleName": "Picora", "CFBundleDisplayName": "Picora", "CFBundleExecutable": "picora", "CFBundleIdentifier": "app.picora.desktop", "CFBundleVersion": version, "CFBundleShortVersionString": version, "CFBundlePackageType": "APPL", "LSUIElement": True, "NSHighResolutionCapable": True}, f)
     # Seal the complete bundle, not just the linker-signed Mach-O executable.
-    # Ad-hoc signing provides integrity, NOT Developer ID/Gatekeeper trust.
-    subprocess.run(["codesign", "--force", "--sign", "-", str(app.parent)], check=True)
+    # Release builds use Picora's own self-signed certificate. macOS keeps the
+    # Accessibility grant for the same identifier and certificate, so it survives
+    # updates; an ad-hoc signature changes with every build. Neither provides
+    # Developer ID/Gatekeeper trust.
+    identity = os.environ.get("PICORA_MACOS_SIGNING_IDENTITY", "-")
+    keychain = os.environ.get("PICORA_MACOS_KEYCHAIN")
+    sign = ["codesign", "--force", "--timestamp=none", "--sign", identity]
+    if identity != "-" and keychain:
+        sign += ["--keychain", keychain]
+    subprocess.run(sign + [str(app.parent)], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app.parent)], check=True)
 else:
     shutil.copy2(exe, stage / exe.name)

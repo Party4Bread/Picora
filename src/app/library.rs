@@ -694,7 +694,7 @@ impl App {
                 }
             }
             ui.collapsing("Picora is already enabled, but it still does not work", |ui| {
-                ui.label("After an update, macOS may still remember the previous copy. Remove Picora from the Accessibility list with −, add the current Picora.app with +, and turn it on. Then quit and reopen Picora.");
+                ui.label("macOS may still be allowing an older Picora build. This can happen once after updating from an older version. Remove Picora from the Accessibility list with −, add the current Picora.app with +, and turn it on. Then quit and reopen Picora.");
                 ui.label("Keep Picora in Applications. If you run it from source, macOS may list your terminal or launcher instead.");
             });
             if ui.button("Use manual paste instead").clicked() {
