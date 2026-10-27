@@ -15,6 +15,7 @@ Like the Windows emoji panel, Picora opens with a shortcut: **Ctrl+Shift+Space**
 - **Find recent stickers:** recently used stickers appear first, followed by newly added ones.
 - **Use animated reactions:** hover to preview; copy a still image or paste an animated file. Downloaded stickers remain available offline.
 - **Work from the keyboard:** configurable global shortcut and arrow-key navigation, with light and dark themes.
+- **Opens where you type:** the picker appears next to the text cursor on Windows and macOS, and at the mouse pointer on Linux. Change it in **Settings → Open picker at**.
 - **English and Korean:** the interface follows your system language; change it in **Settings → Language**.
 - **Update in the app:** install GitHub releases from **Settings → Updates** while preserving your library.
 
@@ -142,9 +143,10 @@ cargo test --locked --test arca_live -- --ignored --nocapture
 cargo test --locked --test live live_dcinside_search_pack_and_image -- --ignored
 cargo test --locked --test windows_viewports -- --ignored --nocapture
 python scripts/smoke_wayland_clipboard.py
+cargo build && uv run --with python-xlib scripts/smoke_picker_placement.py
 ```
 
-The arca.live check uses your saved session. Windows viewport tests need an interactive desktop; the Wayland script requires headless KWin. For macOS browser clipboard checks, build `cargo build --locked --example clipboard_fixture` and follow the instructions in [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py).
+The arca.live check uses your saved session. Windows viewport tests need an interactive desktop; the Wayland scripts require headless KWin. For macOS browser clipboard checks, build `cargo build --locked --example clipboard_fixture` and follow the instructions in [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py).
 
 Packaging and installer scripts are used by CI. `test_update_manifest.py` validates release metadata; `tests/update_process.rs` runs updater replacement and recovery scenarios as part of `cargo test`. Platform smoke scripts cover desktop behavior that headless CI cannot exercise. See [release and recovery documentation](docs/UPDATES.md).
 

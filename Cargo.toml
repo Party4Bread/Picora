@@ -49,16 +49,20 @@ sys-locale = "0.3.2"
 winit = { version = "0.30", default-features = false, features = ["x11"] }
 ashpd = { version = "0.12", default-features = false, features = ["tokio"] }
 gtk = "0.18"
-x11rb = { version = "0.13", features = ["xtest"] }
+x11rb = { version = "0.13", features = ["randr", "xtest"] }
 wl-clipboard-rs = "0.9.4"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+raw-window-handle = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Threading", "Win32_Storage_FileSystem"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Variant", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSRunningApplication", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSRunningApplication", "NSScreen", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSGeometry"] }
 
 [dev-dependencies]
 png = "0.18"

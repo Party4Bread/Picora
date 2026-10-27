@@ -675,6 +675,27 @@ impl App {
             }
         });
         ui.horizontal(|ui| {
+            ui.label(t!("Open picker at"));
+            let old = self.settings.picker_position.effective();
+            let mut position = old;
+            egui::ComboBox::from_id_salt("picker position")
+                .selected_text(old.name())
+                .show_ui(ui, |ui| {
+                    for &choice in crate::model::PickerPosition::choices() {
+                        ui.selectable_value(&mut position, choice, choice.name());
+                    }
+                });
+            if position != old {
+                self.settings.picker_position = position;
+                changed = true;
+            }
+        });
+        if self.settings.picker_position.effective() == crate::model::PickerPosition::TextCursor {
+            ui.label(t!(
+                "If the text cursor cannot be found, the picker opens at the mouse pointer."
+            ));
+        }
+        ui.horizontal(|ui| {
             ui.label(t!("Language"));
             let old = self.settings.language;
             egui::ComboBox::from_id_salt("language")

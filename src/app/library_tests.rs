@@ -88,6 +88,9 @@ fn fixture(root: PathBuf, runtime: tokio::runtime::Handle, ctx: &egui::Context) 
         preview: None,
         library_open: true,
         picker_open: false,
+        picker_frame_size: None,
+        #[cfg(target_os = "linux")]
+        x11_window: None,
         focus_search: true,
         status: "Choose a sticker to copy and paste".into(),
         error: false,

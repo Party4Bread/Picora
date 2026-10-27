@@ -15,6 +15,7 @@ Windows 이모지 패널처럼 **Ctrl+Shift+Space**로 Picora를 열 수 있습�
 - **최근 스티커 확인:** 최근 사용한 스티커를 먼저 표시하고, 그 뒤에 새로 추가한 스티커를 표시합니다.
 - **움직이는 스티커 사용:** 마우스를 올려 미리 보고, 정지 이미지나 애니메이션 파일로 복사합니다. 다운로드한 스티커는 오프라인에서도 사용할 수 있습니다.
 - **키보드 조작:** 전역 단축키 변경과 방향키 탐색을 지원하며, 밝은 테마와 어두운 테마를 제공합니다.
+- **입력하는 곳에서 열기:** Windows와 macOS에서는 텍스트 커서 옆에, Linux에서는 마우스 포인터 위치에 선택기가 열립니다. **설정 → 선택기 여는 위치**에서 바꿀 수 있습니다.
 - **한국어·영어 지원:** 시스템 언어를 따르며, **설정 → 언어**에서 바꿀 수 있습니다.
 - **앱 내 업데이트:** **설정 → 업데이트**에서 라이브러리를 유지한 채 GitHub 릴리스를 설치합니다.
 
@@ -142,9 +143,10 @@ cargo test --locked --test arca_live -- --ignored --nocapture
 cargo test --locked --test live live_dcinside_search_pack_and_image -- --ignored
 cargo test --locked --test windows_viewports -- --ignored --nocapture
 python scripts/smoke_wayland_clipboard.py
+cargo build && uv run --with python-xlib scripts/smoke_picker_placement.py
 ```
 
-아카라이브(arca.live) 검증은 저장된 세션을 사용합니다. Windows 창 테스트에는 대화형 데스크톱이 필요하고, Wayland 스크립트에는 화면 없이 실행하는 KWin이 필요합니다. macOS 브라우저 클립보드를 검증하려면 `cargo build --locked --example clipboard_fixture`로 빌드한 뒤 [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py)의 안내를 따르세요.
+아카라이브(arca.live) 검증은 저장된 세션을 사용합니다. Windows 창 테스트에는 대화형 데스크톱이 필요하고, Wayland 스크립트들에는 화면 없이 실행하는 KWin이 필요합니다. macOS 브라우저 클립보드를 검증하려면 `cargo build --locked --example clipboard_fixture`로 빌드한 뒤 [smoke_macos_chrome.py](scripts/smoke_macos_chrome.py)의 안내를 따르세요.
 
 패키징과 설치 프로그램 스크립트는 CI에서 사용합니다. `test_update_manifest.py`는 릴리스 메타데이터를 검증하고, `tests/update_process.rs`는 `cargo test`의 일부로 업데이트 교체와 복구 시나리오를 실행합니다. 플랫폼별 검증 스크립트는 화면 없는 CI에서 확인할 수 없는 데스크톱 동작을 검사합니다. [릴리스와 복구 문서](docs/UPDATES.md)도 참고하세요.
 

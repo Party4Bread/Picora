@@ -141,6 +141,46 @@ pub struct Settings {
     #[serde(with = "theme_setting")]
     pub theme: eframe::egui::ThemePreference,
     pub language: crate::i18n::Language,
+    pub picker_position: PickerPosition,
+}
+/// Where the picker window opens.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PickerPosition {
+    /// Next to the text cursor, or at the mouse pointer when it cannot be found.
+    #[default]
+    TextCursor,
+    Pointer,
+    /// Wherever the window was last.
+    Last,
+}
+impl PickerPosition {
+    /// The choices offered on this platform. Where text cursors cannot be
+    /// found, `TextCursor` behaves as `Pointer` and is shown as it.
+    #[must_use]
+    pub fn choices() -> &'static [Self] {
+        if crate::platform::placement::finds_text_cursor() {
+            &[Self::TextCursor, Self::Pointer, Self::Last]
+        } else {
+            &[Self::Pointer, Self::Last]
+        }
+    }
+    #[must_use]
+    pub fn name(self) -> std::borrow::Cow<'static, str> {
+        match self {
+            Self::TextCursor => t!("Text cursor"),
+            Self::Pointer => t!("Mouse pointer"),
+            Self::Last => t!("Where it was last"),
+        }
+    }
+    #[must_use]
+    pub fn effective(self) -> Self {
+        if self == Self::TextCursor && !crate::platform::placement::finds_text_cursor() {
+            Self::Pointer
+        } else {
+            self
+        }
+    }
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -153,6 +193,7 @@ impl Default for Settings {
             simultaneous_downloads: 4,
             theme: eframe::egui::ThemePreference::System,
             language: crate::i18n::Language::System,
+            picker_position: PickerPosition::TextCursor,
         }
     }
 }
