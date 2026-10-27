@@ -12,7 +12,7 @@ A separate helper waits for Picora to exit, keeps backups, replaces files, and s
 
 Settings → Updates → Update channel offers Stable (the default) and Dev. Dev checks the newest CI-tested main build; switching back to Stable offers the latest stable release even if its version is lower. Both channels require an explicit Update and restart.
 
-A successful main push with build changes publishes an immutable prerelease named `v<version>-dev.<run-id>.g<commit>`, using the existing CI artifacts and checksum manifest. The app embeds the same version, including the first 12 commit characters. Documentation-only pushes and pull requests do not publish development releases. Dev prereleases never become GitHub's latest stable release.
+A successful main push with build changes publishes an immutable prerelease named `v<version>-dev.<run-id>.g<commit>`, using the existing CI artifacts and checksum manifest. The app embeds the same version, including the first 12 commit characters. Documentation-only pushes and pull requests do not publish development releases. Dev prereleases never become GitHub's latest stable release. Publishing a stable release deletes the dev prereleases (and their tags) built for older versions; dev builds of the released version stay until the next stable release.
 
 ## Recovery
 
