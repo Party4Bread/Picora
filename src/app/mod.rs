@@ -107,6 +107,13 @@ pub struct App {
     preview: Option<Pack>,
     library_open: bool,
     picker_open: bool,
+    /// The picker's size with its title bar, recorded when it was last hidden.
+    /// Hidden windows may report their size without one.
+    picker_frame_size: Option<Vec2>,
+    /// XWayland and X11 window managers may draw a title bar that winit
+    /// leaves out of the window size; it is looked up through this window.
+    #[cfg(target_os = "linux")]
+    x11_window: Option<u32>,
     focus_search: bool,
     status: String,
     error: bool,
@@ -195,6 +202,18 @@ impl App {
             preview: None,
             library_open: library,
             picker_open: !background && !library,
+            picker_frame_size: None,
+            #[cfg(target_os = "linux")]
+            x11_window: {
+                use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                cc.window_handle()
+                    .ok()
+                    .and_then(|handle| match handle.as_raw() {
+                        RawWindowHandle::Xlib(h) => u32::try_from(h.window).ok(),
+                        RawWindowHandle::Xcb(h) => Some(h.window.get()),
+                        _ => None,
+                    })
+            },
             focus_search: true,
             status: t!("Choose a sticker to copy and paste").into(),
             error: false,
@@ -372,7 +391,52 @@ impl App {
         };
         self.picker_open = true;
         self.picker_state.selected = 0;
+        let position = self.picker_position(ctx);
+        // Window managers may place a window again when it is shown, and some
+        // ignore moves of hidden windows, so move it before and after.
+        let move_picker = || {
+            if let Some(position) = position {
+                ctx.send_viewport_cmd_to(
+                    egui::ViewportId::ROOT,
+                    egui::ViewportCommand::OuterPosition(position),
+                );
+            }
+        };
+        move_picker();
         self.focus_picker(ctx);
+        move_picker();
+    }
+    /// Where the picker should open, or `None` to leave it where it was.
+    fn picker_position(&self, ctx: &egui::Context) -> Option<egui::Pos2> {
+        use crate::model::PickerPosition;
+        let position = self.settings.picker_position.effective();
+        if position == PickerPosition::Last {
+            return None;
+        }
+        let anchor = platform::placement::locate(
+            position == PickerPosition::TextCursor,
+            &self.services.runtime,
+        )?;
+        let (pixels_per_point, native) = ctx.input(|i| {
+            (
+                i.pixels_per_point,
+                i.viewport().native_pixels_per_point.unwrap_or(1.),
+            )
+        });
+        // Screen units per egui point: winit positions windows in physical
+        // pixels, and macOS reports the screen in points.
+        let units = if cfg!(target_os = "macos") {
+            pixels_per_point / native
+        } else {
+            pixels_per_point
+        };
+        let size = self
+            .picker_frame_size
+            .or_else(|| self.frame_size(ctx))
+            .unwrap_or(egui::vec2(460., 540.))
+            * units;
+        let corner = platform::placement::place(anchor, size, 6. * units);
+        Some((corner.to_vec2() / units).to_pos2())
     }
     fn focus_picker(&mut self, ctx: &egui::Context) {
         self.focus_search = true;
@@ -391,7 +455,25 @@ impl App {
         self.cancel_auto_paste();
         self.set_picker_hidden(ctx);
     }
+    /// The picker's current size including its title bar, in points.
+    fn frame_size(&self, ctx: &egui::Context) -> Option<Vec2> {
+        let (outer, inner) = ctx.input(|i| (i.viewport().outer_rect, i.viewport().inner_rect));
+        let frame = match (outer, inner) {
+            (Some(outer), Some(inner)) => outer.union(inner),
+            (outer, inner) => outer.or(inner)?,
+        };
+        #[cfg(target_os = "linux")]
+        if outer == inner
+            && let Some(extra) = self.x11_window.and_then(platform::placement::frame_extents)
+        {
+            return Some(frame.size() + extra / ctx.pixels_per_point());
+        }
+        Some(frame.size())
+    }
     fn set_picker_hidden(&mut self, ctx: &egui::Context) {
+        if self.picker_open {
+            self.picker_frame_size = self.frame_size(ctx).or(self.picker_frame_size);
+        }
         self.picker_open = false;
         ctx.send_viewport_cmd_to(
             egui::ViewportId::ROOT,

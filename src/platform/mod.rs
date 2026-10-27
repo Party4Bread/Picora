@@ -7,6 +7,7 @@ pub mod macos_keyboard;
 #[cfg(target_os = "macos")]
 pub mod macos_permissions;
 pub mod paste;
+pub mod placement;
 pub mod shortcut;
 #[cfg(target_os = "linux")]
 pub mod wayland;

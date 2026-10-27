@@ -5,3 +5,13 @@ _version: 2
   ko: "시스템 언어"
 "Language":
   ko: "언어"
+"Open picker at":
+  ko: "선택기 여는 위치"
+"Text cursor":
+  ko: "텍스트 커서"
+"Mouse pointer":
+  ko: "마우스 포인터"
+"Where it was last":
+  ko: "마지막 위치"
+"If the text cursor cannot be found, the picker opens at the mouse pointer.":
+  ko: "텍스트 커서를 찾을 수 없으면 마우스 포인터 위치에 선택기를 엽니다."
