@@ -1,8 +1,6 @@
 _version: 2
 # Messages from services, repositories, sign-in and updates that appear in the
 # interface. Keys are the English text; keep the double-quoted one-line layout.
-"Use a shortcut such as Ctrl+Shift+Space":
-  ko: "Ctrl+Shift+Space와 같은 단축키를 사용하세요"
 "Shortcut unavailable; choose a different combination":
   ko: "이 단축키를 사용할 수 없습니다. 다른 조합을 선택하세요"
 "Shortcut is already in use":
@@ -109,3 +107,13 @@ _version: 2
   ko: "개발 빌드를 확인할 수 없습니다. 오프라인이거나 요청 한도에 도달했다면 잠시 후 다시 시도하세요"
 "Update checksum or size mismatch":
   ko: "업데이트 체크섬 또는 크기가 일치하지 않습니다"
+"Desktop does not offer the Remote Desktop portal":
+  ko: "데스크톱에서 원격 데스크톱 포털을 제공하지 않습니다"
+"Clipboard portal access was not granted":
+  ko: "클립보드 포털 접근이 허용되지 않았습니다"
+"Wayland session closed; reconnect in Settings":
+  ko: "Wayland 세션이 종료되었습니다. 설정에서 다시 연결하세요"
+"No shortcut portal; bind `picora --show` in desktop settings":
+  ko: "단축키 포털이 없습니다. 데스크톱 설정에서 `picora --show`를 단축키로 지정하세요"
+"Open Picora sticker picker":
+  ko: "Picora 스티커 선택기 열기"

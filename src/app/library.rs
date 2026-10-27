@@ -514,7 +514,7 @@ impl App {
             let label = if self.login_busy && !account.checking() {
                 t!("Waiting for sign-in…")
             } else {
-                account.label().into()
+                account.label()
             };
             ui.label(RichText::new(label).color(if account.error().is_some() {
                 ui.visuals().error_fg_color

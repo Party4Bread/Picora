@@ -8,6 +8,7 @@ use ashpd::desktop::{
     remote_desktop::{DeviceType, KeyState, RemoteDesktop},
 };
 use futures_util::StreamExt;
+use rust_i18n::t;
 use tokio::{
     io::AsyncWriteExt,
     sync::{mpsc, oneshot},
@@ -48,7 +49,7 @@ impl Wayland {
         register_application().await?;
         let remote = RemoteDesktop::new()
             .await
-            .context("Desktop does not offer the Remote Desktop portal")?;
+            .with_context(|| t!("Desktop does not offer the Remote Desktop portal").into_owned())?;
         let session = remote.create_session().await?;
         let setup = async {
             let closed = session
@@ -71,7 +72,7 @@ impl Wayland {
                 clipboard
                     .request(&session)
                     .await
-                    .context("Clipboard portal access was not granted")?;
+                    .with_context(|| t!("Clipboard portal access was not granted").into_owned())?;
                 Ok::<_, anyhow::Error>(clipboard)
             }
             .await;
@@ -159,7 +160,7 @@ impl Wayland {
                 result: tx,
             })
             .await
-            .context("Wayland session closed; reconnect in Settings")?;
+            .with_context(|| t!("Wayland session closed; reconnect in Settings").into_owned())?;
         rx.await?
     }
     /// # Errors
@@ -169,7 +170,7 @@ impl Wayland {
         self.tx
             .send(Command::Paste(ticket, tx))
             .await
-            .context("Wayland session closed; reconnect in Settings")?;
+            .with_context(|| t!("Wayland session closed; reconnect in Settings").into_owned())?;
         rx.await?
     }
 }
@@ -181,12 +182,12 @@ pub async fn shortcuts(
     activate: impl Fn() + Send + 'static,
 ) -> Result<()> {
     register_application().await?;
-    let proxy = GlobalShortcuts::new()
-        .await
-        .context("No shortcut portal; bind `picora --show` in desktop settings")?;
+    let proxy = GlobalShortcuts::new().await.with_context(|| {
+        t!("No shortcut portal; bind `picora --show` in desktop settings").into_owned()
+    })?;
     let session = proxy.create_session().await?;
     let mut events = proxy.receive_activated().await?;
-    let shortcut = NewShortcut::new("show-picker", "Open Picora sticker picker")
+    let shortcut = NewShortcut::new("show-picker", t!("Open Picora sticker picker").as_ref())
         .preferred_trigger(trigger.as_str());
     let bound = proxy
         .bind_shortcuts(&session, &[shortcut], None)
