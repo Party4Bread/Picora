@@ -2,6 +2,7 @@ use super::{
     App, Filter, GroupEdit, LibrarySticker, PackRef, Provider, RichText, Tab, View, design, egui,
     platform,
 };
+use rust_i18n::t;
 impl App {
     fn library_collections(&mut self, ui: &mut egui::Ui) {
         for (label, filter) in [("Favorites", Filter::Favorites), ("Recent", Filter::Recent)] {
@@ -649,6 +650,21 @@ impl App {
                 changed |= ui
                     .selectable_value(&mut self.settings.theme, theme, label)
                     .changed();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(t!("Language"));
+            let old = self.settings.language;
+            egui::ComboBox::from_id_salt("language")
+                .selected_text(old.name())
+                .show_ui(ui, |ui| {
+                    for language in crate::i18n::Language::ALL {
+                        ui.selectable_value(&mut self.settings.language, language, language.name());
+                    }
+                });
+            if self.settings.language != old {
+                self.settings.language.apply();
+                changed = true;
             }
         });
         if changed {

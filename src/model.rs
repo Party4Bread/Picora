@@ -136,6 +136,7 @@ pub struct Settings {
     pub simultaneous_downloads: usize,
     #[serde(with = "theme_setting")]
     pub theme: eframe::egui::ThemePreference,
+    pub language: crate::i18n::Language,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -147,6 +148,7 @@ impl Default for Settings {
             launch_at_login: false,
             simultaneous_downloads: 4,
             theme: eframe::egui::ThemePreference::System,
+            language: crate::i18n::Language::System,
         }
     }
 }

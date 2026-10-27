@@ -159,6 +159,7 @@ impl App {
         let store = Store::open(&root.join("library.sqlite3"))?;
         let settings = store.settings()?;
         ctx.set_theme(settings.theme);
+        settings.language.apply();
         let (tx, rx) = mpsc::channel();
         let bus = Bus {
             tx,
