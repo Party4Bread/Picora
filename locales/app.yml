@@ -1,0 +1,111 @@
+_version: 2
+# Picker, tray, status messages and updates. Keys are the English interface
+# text; keep each key and value double-quoted on one line (see src/i18n.rs).
+"Choose a sticker to copy and paste":
+  ko: "복사해서 붙여넣을 스티커를 선택하세요"
+"Tray unavailable: %{error}. Use picora --show to reopen.":
+  ko: "트레이를 사용할 수 없습니다: %{error}. picora --show로 다시 열 수 있습니다."
+"Desktop shortcut session ended; reconnect in Settings":
+  ko: "데스크톱 단축키 세션이 끝났습니다. 설정에서 다시 연결하세요"
+"Waiting for desktop shortcut permission…":
+  ko: "데스크톱 단축키 권한을 기다리는 중…"
+"Active: %{shortcut}":
+  ko: "사용 중: %{shortcut}"
+"Shortcut saved":
+  ko: "단축키를 저장했습니다"
+"Shortcut unavailable: %{error}":
+  ko: "단축키를 사용할 수 없습니다: %{error}"
+"Click the sticker window to start typing. If it is hidden, choose Open picker from Picora’s menu bar icon.":
+  ko: "스티커 창을 클릭한 뒤 입력하세요. 창이 보이지 않으면 Picora 메뉴 막대 아이콘에서 선택기 열기를 선택하세요."
+"All stickers":
+  ko: "모든 스티커"
+"Favorites":
+  ko: "즐겨찾기"
+"Recent":
+  ko: "최근 사용"
+"All":
+  ko: "전체"
+"Could not load stickers: %{error}":
+  ko: "스티커를 불러오지 못했습니다: %{error}"
+"Preparing clipboard…":
+  ko: "클립보드 준비 중…"
+"Library":
+  ko: "라이브러리"
+"Automatic paste needs macOS Accessibility permission. Copying still works.":
+  ko: "자동 붙여넣기에는 macOS 손쉬운 사용 권한이 필요합니다. 복사는 계속 사용할 수 있습니다."
+"Set up automatic paste":
+  ko: "자동 붙여넣기 설정"
+"Search stickers…":
+  ko: "스티커 검색…"
+"Update startup acknowledgement failed: %{error}":
+  ko: "업데이트 후 시작 확인에 실패했습니다: %{error}"
+"Picora · Library":
+  ko: "Picora · 라이브러리"
+"Open picker":
+  ko: "선택기 열기"
+"Open library":
+  ko: "라이브러리 열기"
+"Hide to tray":
+  ko: "트레이로 숨기기"
+"Quit Picora":
+  ko: "Picora 종료"
+"Picora — sticker picker":
+  ko: "Picora — 스티커 선택기"
+"Could not copy: %{error}":
+  ko: "복사하지 못했습니다: %{error}"
+"Copied — paste with Ctrl+V / Cmd+V":
+  ko: "복사했습니다 — Ctrl+V / Cmd+V로 붙여넣으세요"
+"Copied, but could not update Recent: %{error}":
+  ko: "복사했지만 최근 사용 목록을 업데이트하지 못했습니다: %{error}"
+"No packs found":
+  ko: "팩을 찾지 못했습니다"
+"Select a pack to preview":
+  ko: "미리 볼 팩을 선택하세요"
+"Downloaded %{title} · available offline":
+  ko: "%{title} 다운로드 완료 · 오프라인에서 사용할 수 있습니다"
+"Download incomplete: %{error}. Open the pack and retry; cached images are reused.":
+  ko: "다운로드를 완료하지 못했습니다: %{error}. 팩을 열고 다시 시도하세요. 이미 받은 이미지는 다시 사용합니다."
+"Copied and paste shortcut sent":
+  ko: "복사하고 붙여넣기 단축키를 보냈습니다"
+"Copied — paste manually. %{error}":
+  ko: "복사했습니다 — 직접 붙여넣으세요. %{error}"
+"Wayland keyboard access enabled":
+  ko: "Wayland 키보드 접근을 사용하도록 설정했습니다"
+"Wayland input unavailable: %{error}. Stickers can still be copied when a clipboard backend is available.":
+  ko: "Wayland 입력을 사용할 수 없습니다: %{error}. 클립보드 백엔드가 있으면 스티커는 계속 복사할 수 있습니다."
+"Update available · %{version}":
+  ko: "업데이트 있음 · %{version}"
+"Updates":
+  ko: "업데이트"
+"Update channel":
+  ko: "업데이트 채널"
+"Stable":
+  ko: "안정"
+"Dev":
+  ko: "개발"
+"Latest main build that passed CI. May contain unfinished changes.":
+  ko: "CI를 통과한 최신 main 빌드입니다. 완성되지 않은 변경 사항이 포함될 수 있습니다."
+"Update channel saved":
+  ko: "업데이트 채널을 저장했습니다"
+"Check for updates at startup":
+  ko: "시작할 때 업데이트 확인"
+"Update preference saved":
+  ko: "업데이트 설정을 저장했습니다"
+"Check for updates":
+  ko: "업데이트 확인"
+"Checking GitHub Releases…":
+  ko: "GitHub 릴리스 확인 중…"
+"No update is available on this channel.":
+  ko: "이 채널에 사용 가능한 업데이트가 없습니다."
+"Picora %{version} is available":
+  ko: "Picora %{version} 업데이트를 사용할 수 있습니다"
+"Update and restart":
+  ko: "업데이트 후 다시 시작"
+"Downloading and verifying update…":
+  ko: "업데이트를 다운로드하고 확인하는 중…"
+"Cancel update":
+  ko: "업데이트 취소"
+"Preparing restart…":
+  ko: "다시 시작 준비 중…"
+"GitHub releases":
+  ko: "GitHub 릴리스"

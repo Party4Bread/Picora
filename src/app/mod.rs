@@ -20,6 +20,7 @@ use crate::{
 };
 use anyhow::Result;
 use eframe::egui::{self, Color32, RichText, Vec2};
+use rust_i18n::t;
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -125,7 +126,7 @@ pub struct App {
     shortcut_generation: u64,
     #[cfg(target_os = "linux")]
     portal_task: Option<tokio::task::JoinHandle<()>>,
-    tray: Option<tray_icon::TrayIcon>,
+    tray: Option<Tray>,
     quit: bool,
     data_dir: PathBuf,
 }
@@ -195,7 +196,7 @@ impl App {
             library_open: library,
             picker_open: !background && !library,
             focus_search: true,
-            status: "Choose a sticker to copy and paste".into(),
+            status: t!("Choose a sticker to copy and paste").into(),
             error: false,
             browsing: false,
             downloading_pack: false,
@@ -237,7 +238,10 @@ impl App {
             Err(e) => {
                 app.library_open = true;
                 app.message(
-                    format!("Tray unavailable: {e}. Use picora --show to reopen."),
+                    t!(
+                        "Tray unavailable: %{error}. Use picora --show to reopen.",
+                        error = e
+                    ),
                     true,
                 );
             }
@@ -301,11 +305,11 @@ impl App {
                 )
                 .await;
                 let error = result.err().unwrap_or_else(|| {
-                    anyhow::anyhow!("Desktop shortcut session ended; reconnect in Settings")
+                    anyhow::anyhow!(t!("Desktop shortcut session ended; reconnect in Settings"))
                 });
                 bus.send(Event::ShortcutRegistered(id, requested, false, Err(error)));
             }));
-            self.shortcut_status = "Waiting for desktop shortcut permission…".into();
+            self.shortcut_status = t!("Waiting for desktop shortcut permission…").into();
             return;
         }
         let result = self.register_native_shortcut();
@@ -323,17 +327,23 @@ impl App {
         }
         match result {
             Ok(()) => {
-                self.shortcut_status = format!("Active: {requested}");
+                self.shortcut_status = t!("Active: %{shortcut}", shortcut = requested).into();
                 if persist {
                     self.settings.shortcut = requested;
                     let result = self.store.save_settings(&self.settings);
-                    self.report(result, "Shortcut saved");
+                    self.report(result, &t!("Shortcut saved"));
                 }
             }
             Err(error) => {
                 eprintln!("Shortcut unavailable: {error:#}");
                 self.shortcut_status = format!("{error:#}");
-                self.message(format!("Shortcut unavailable: {error:#}"), true);
+                self.message(
+                    t!(
+                        "Shortcut unavailable: %{error}",
+                        error = format!("{error:#}")
+                    ),
+                    true,
+                );
             }
         }
     }
@@ -370,7 +380,7 @@ impl App {
         if let Err(error) = focus::activate_current_app() {
             eprintln!("Could not focus the sticker window: {error:#}");
             self.message(
-                "Click the sticker window to start typing. If it is hidden, choose Open picker from Picora’s menu bar icon.",
+                t!("Click the sticker window to start typing. If it is hidden, choose Open picker from Picora’s menu bar icon."),
                 false,
             );
         }
@@ -430,19 +440,19 @@ impl App {
     }
     fn collection_title(&self, filter: &Filter) -> String {
         match filter {
-            Filter::All => "All stickers".into(),
-            Filter::Favorites => "Favorites".into(),
-            Filter::Recent => "Recent".into(),
+            Filter::All => t!("All stickers").into(),
+            Filter::Favorites => t!("Favorites").into(),
+            Filter::Recent => t!("Recent").into(),
             Filter::Pack(key) => self
                 .packs
                 .iter()
                 .find(|p| p.pack.reference.key() == *key)
-                .map_or_else(|| "All stickers".into(), |p| p.pack.title.clone()),
+                .map_or_else(|| t!("All stickers").into(), |p| p.pack.title.clone()),
             Filter::Group(id) => self
                 .groups
                 .iter()
                 .find(|g| g.id == *id)
-                .map_or_else(|| "All stickers".into(), |g| g.name.clone()),
+                .map_or_else(|| t!("All stickers").into(), |g| g.name.clone()),
         }
     }
     fn items(&self, filter: &Filter, search: &str) -> Result<Vec<LibrarySticker>> {
@@ -488,7 +498,11 @@ impl App {
         match result {
             Ok(items) => Some(items),
             Err(error) => {
-                let message = format!("Could not load stickers: {error:#}");
+                let message = t!(
+                    "Could not load stickers: %{error}",
+                    error = format!("{error:#}")
+                )
+                .into_owned();
                 ui.colored_label(ui.visuals().error_fg_color, &message);
                 self.message(message, true);
                 None
@@ -512,7 +526,7 @@ impl App {
             target,
             from_picker,
         });
-        self.message("Preparing clipboard…", false);
+        self.message(t!("Preparing clipboard…"), false);
         self.services.copy(item, mode);
     }
     fn report(&mut self, result: Result<()>, success: &str) {
@@ -536,9 +550,9 @@ impl App {
     fn picker_collections(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             for (label, filter) in [
-                ("Favorites", Filter::Favorites),
-                ("Recent", Filter::Recent),
-                ("All", Filter::All),
+                (t!("Favorites"), Filter::Favorites),
+                (t!("Recent"), Filter::Recent),
+                (t!("All"), Filter::All),
             ] {
                 if ui
                     .selectable_value(&mut self.picker_state.filter, filter, label)
@@ -634,7 +648,7 @@ impl App {
                     .on_hover_text(&title);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .add(egui::Button::new("Library").frame_when_inactive(false))
+                            .add(egui::Button::new(t!("Library")).frame_when_inactive(false))
                             .clicked()
                         {
                             self.open_library();
@@ -643,11 +657,12 @@ impl App {
                 });
                 self.update_notice(ui);
                 #[cfg(target_os = "macos")]
-                if self.settings.auto_paste
-                    && !platform::macos_permissions::accessibility_allowed()
+                if self.settings.auto_paste && !platform::macos_permissions::accessibility_allowed()
                 {
-                    ui.label("Automatic paste needs macOS Accessibility permission. Copying still works.");
-                    if ui.button("Set up automatic paste").clicked() {
+                    ui.label(t!(
+                        "Automatic paste needs macOS Accessibility permission. Copying still works."
+                    ));
+                    if ui.button(t!("Set up automatic paste")).clicked() {
                         self.hide_picker(ctx);
                         self.open_library();
                         self.tab = Tab::Settings;
@@ -665,7 +680,7 @@ impl App {
                     [ui.available_width(), 36.],
                     egui::TextEdit::singleline(&mut self.picker_state.search)
                         .id(search_id)
-                        .hint_text("Search stickers…")
+                        .hint_text(t!("Search stickers…"))
                         .margin(egui::vec2(12., 8.))
                         .desired_width(f32::INFINITY),
                 );
@@ -678,12 +693,16 @@ impl App {
                 egui::TopBottomPanel::bottom("picker-status").show_inside(ui, |ui| self.footer(ui));
                 self.picker_shortcuts(ui);
                 ui.add_space(4.);
-                let Some(items) = self.load_items(ui, View::Picker) else { return; };
+                let Some(items) = self.load_items(ui, View::Picker) else {
+                    return;
+                };
                 if ctx.content_rect().height() >= 400. {
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::Label::new(
-                                RichText::new(self.collection_title(&self.picker_state.filter)).small().strong(),
+                                RichText::new(self.collection_title(&self.picker_state.filter))
+                                    .small()
+                                    .strong(),
                             )
                             .truncate(),
                         );
@@ -709,9 +728,13 @@ impl eframe::App for App {
             let bus = self.services.bus.clone();
             self.services.runtime.spawn_blocking(move || {
                 if let Err(e) = crate::update::helper::acknowledge_health() {
-                    bus.send(Event::UpdateHealthFailed(format!(
-                        "Update startup acknowledgement failed: {e:#}"
-                    )));
+                    bus.send(Event::UpdateHealthFailed(
+                        t!(
+                            "Update startup acknowledgement failed: %{error}",
+                            error = format!("{e:#}")
+                        )
+                        .into_owned(),
+                    ));
                 }
             });
         }
@@ -728,6 +751,9 @@ impl eframe::App for App {
             self.pending = None;
         }
         self.handle_events(ctx);
+        if let Some(tray) = &mut self.tray {
+            tray.follow_language();
+        }
         if self.quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
@@ -743,7 +769,7 @@ impl eframe::App for App {
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("library"),
                 egui::ViewportBuilder::default()
-                    .with_title("Picora · Library")
+                    .with_title(t!("Picora · Library"))
                     .with_inner_size([960., 700.])
                     .with_min_inner_size([640., 460.]),
                 |ctx, _| {
@@ -757,18 +783,54 @@ impl eframe::App for App {
         ctx.request_repaint_after(Duration::from_millis(100));
     }
 }
-fn make_tray() -> Result<tray_icon::TrayIcon> {
+/// The tray keeps native menu labels, so it relabels them when the interface
+/// language changes.
+struct Tray {
+    icon: tray_icon::TrayIcon,
+    items: [tray_icon::menu::MenuItem; 4],
+    locale: String,
+}
+impl Tray {
+    fn labels() -> [std::borrow::Cow<'static, str>; 4] {
+        [
+            t!("Open picker"),
+            t!("Open library"),
+            t!("Hide to tray"),
+            t!("Quit Picora"),
+        ]
+    }
+    fn tooltip() -> std::borrow::Cow<'static, str> {
+        t!("Picora — sticker picker")
+    }
+    /// Called every frame; only a language change touches the native menu.
+    fn follow_language(&mut self) {
+        let locale = rust_i18n::locale();
+        if *locale == *self.locale {
+            return;
+        }
+        self.locale = locale.to_string();
+        for (item, label) in self.items.iter().zip(Self::labels()) {
+            item.set_text(label);
+        }
+        if let Err(error) = self.icon.set_tooltip(Some(Self::tooltip())) {
+            eprintln!("Could not update the tray tooltip: {error}");
+        }
+    }
+}
+fn make_tray() -> Result<Tray> {
     use tray_icon::{
         Icon, TrayIconBuilder,
         menu::{Menu, MenuItem},
     };
+    let [show, library, hide, quit] = Tray::labels();
+    let items = [
+        MenuItem::with_id("show", show, true, None),
+        MenuItem::with_id("library", library, true, None),
+        MenuItem::with_id("hide", hide, true, None),
+        MenuItem::with_id("quit", quit, true, None),
+    ];
     let menu = Menu::new();
-    menu.append_items(&[
-        &MenuItem::with_id("show", "Open picker", true, None),
-        &MenuItem::with_id("library", "Open library", true, None),
-        &MenuItem::with_id("hide", "Hide to tray", true, None),
-        &MenuItem::with_id("quit", "Quit Picora", true, None),
-    ])?;
+    menu.append_items(&[&items[0], &items[1], &items[2], &items[3]])?;
     let mut rgba = vec![0u8; 32 * 32 * 4];
     for y in 4..28 {
         for x in 4..28 {
@@ -780,11 +842,16 @@ fn make_tray() -> Result<tray_icon::TrayIcon> {
             });
         }
     }
-    Ok(TrayIconBuilder::new()
-        .with_tooltip("Picora — sticker picker")
+    let icon = TrayIconBuilder::new()
+        .with_tooltip(Tray::tooltip())
         .with_icon(Icon::from_rgba(rgba, 32, 32)?)
         .with_menu(Box::new(menu))
-        .build()?)
+        .build()?;
+    Ok(Tray {
+        icon,
+        items,
+        locale: rust_i18n::locale().to_string(),
+    })
 }
 
 #[cfg(test)]
