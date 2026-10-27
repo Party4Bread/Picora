@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
+use rust_i18n::t;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -219,7 +220,7 @@ pub fn select_update(
         .targets
         .into_iter()
         .find(|a| a.target == target)
-        .context("This release has no build for your platform")?;
+        .with_context(|| t!("This release has no build for your platform").into_owned())?;
     let github = release_asset(release, &asset.name)?;
     ensure!(github.size == asset.size, "Release asset size mismatch");
     Ok(Some(AvailableUpdate {
@@ -314,7 +315,8 @@ impl ReleaseClient {
                     }
                     Err(error) => {
                         return Err(error.context(
-                            "Cannot check GitHub Releases; retry later if offline or rate limited",
+                            t!("Cannot check GitHub Releases; retry later if offline or rate limited")
+                                .into_owned(),
                         ));
                     }
                 }
@@ -325,9 +327,10 @@ impl ReleaseClient {
                         "https://api.github.com/repos/Party4Bread/Picora/releases?per_page=100",
                     )
                     .await
-                    .context(
-                        "Cannot check development builds; retry later if offline or rate limited",
-                    )?;
+                    .with_context(|| {
+                        t!("Cannot check development builds; retry later if offline or rate limited")
+                            .into_owned()
+                    })?;
                 releases
                     .into_iter()
                     .filter(|release| !release.draft && release.prerelease)
@@ -399,7 +402,7 @@ impl ReleaseClient {
             if count != update.asset.size
                 || hex::encode(hash.finalize()) != update.asset.sha256.to_lowercase()
             {
-                bail!("Update checksum or size mismatch");
+                bail!("{}", t!("Update checksum or size mismatch"));
             }
             file.sync_all().await?;
             Ok(())

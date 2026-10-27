@@ -1,6 +1,7 @@
 use super::selector;
 use super::{Context, Pack, PackRef, Provider, Repository, Result, Url, allowed_url, ensure};
 use crate::model::Sticker;
+use rust_i18n::t;
 use scraper::Html;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -29,7 +30,8 @@ fn check_access(html: &str) -> Result<()> {
         )?)
         .next()
         .is_none(),
-        "arca.live session expired or requires website verification. Reconnect in Accounts."
+        "{}",
+        t!("arca.live session expired or requires website verification. Reconnect in Accounts.")
     );
     Ok(())
 }
@@ -107,7 +109,10 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
                 .next()
                 .is_some()
                 && (html.contains("검색 결과가 없습니다") || html.contains("검색 결과 없음"))),
-        "arca.live catalog could not be read. Sign in, or check whether the website format changed."
+        "{}",
+        t!(
+            "arca.live catalog could not be read. Sign in, or check whether the website format changed."
+        )
     );
     Ok(packs)
 }
@@ -132,13 +137,15 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
         .next()
         .map(|n| n.text().collect::<String>())
         .filter(|t| !t.trim().is_empty())
-        .context("arca.live did not return a sticker pack. Open its source page and reconnect in Accounts if needed.")?;
+        .with_context(|| t!("arca.live did not return a sticker pack. Open its source page and reconnect in Accounts if needed.").into_owned())?;
     // The store navigation and recommendations also contain sticker thumbnails.
     // Only the selected pack's body is a source of clipboard assets.
     let body = doc
         .select(&selector("article .article-body.emoticon-body")?)
         .next()
-        .context("arca.live pack content missing; the website format may have changed")?;
+        .with_context(|| {
+            t!("arca.live pack content missing; the website format may have changed").into_owned()
+        })?;
     let mut stickers = Vec::new();
     let mut seen = HashSet::new();
     for node in body.select(&selector("img.emoticon, video.emoticon")?) {
@@ -172,7 +179,8 @@ pub fn parse_detail(id: &str, html: &str) -> Result<Pack> {
     }
     ensure!(
         !stickers.is_empty(),
-        "arca.live pack has no readable sticker images. Sign in or check the website format."
+        "{}",
+        t!("arca.live pack has no readable sticker images. Sign in or check the website format.")
     );
     Ok(Pack {
         url: reference.url(),

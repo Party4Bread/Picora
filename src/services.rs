@@ -35,6 +35,7 @@ use crate::{
 use anyhow::{Context, Result};
 use eframe::egui;
 use futures_util::{StreamExt, stream};
+use rust_i18n::t;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
@@ -51,7 +52,7 @@ pub enum Event {
     Preview(u64, Result<Pack>),
     Giphy(u64, Result<giphy::Page>),
     GiphyKey(Result<Option<String>>),
-    GiphyKeyStored(Result<&'static str>),
+    GiphyKeyStored(Result<std::borrow::Cow<'static, str>>),
     PackDownloaded(Result<Pack>),
     Media(
         String,
@@ -127,8 +128,13 @@ impl Services {
                     Some(keyring::Error::NoEntry)
                 ) => {}
             Err(e) => {
-                account_status.check =
-                    account::CheckState::Failed(format!("Could not load the saved session: {e:#}"));
+                account_status.check = account::CheckState::Failed(
+                    t!(
+                        "Could not load the saved session: %{error}",
+                        error = format!("{e:#}")
+                    )
+                    .into_owned(),
+                );
             }
         }
         Ok(Self {
@@ -209,15 +215,18 @@ impl Services {
         let bus = self.bus.clone();
         self.runtime.spawn_blocking(move || {
             let result = crate::auth::save_giphy_key(&key)
-                .context("Your key is available until Picora quits, but could not be saved")
-                .map(|()| "GIPHY key saved in OS-protected storage");
+                .with_context(|| {
+                    t!("Your key is available until Picora quits, but could not be saved")
+                        .into_owned()
+                })
+                .map(|()| t!("GIPHY key saved in OS-protected storage"));
             bus.send(Event::GiphyKeyStored(result));
         });
     }
     pub fn forget_giphy_key(&self) {
         let bus = self.bus.clone();
         self.runtime.spawn_blocking(move || {
-            let result = crate::auth::forget_giphy_key().map(|()| "GIPHY key removed");
+            let result = crate::auth::forget_giphy_key().map(|()| t!("GIPHY key removed"));
             bus.send(Event::GiphyKeyStored(result));
         });
     }
@@ -270,10 +279,15 @@ impl Services {
             let result = async {
                 let total = pack.stickers.len();
                 let progress = |done| {
-                    s.bus.send(Event::Progress(format!(
-                        "Downloading {} · {done}/{total}",
-                        pack.title
-                    )));
+                    s.bus.send(Event::Progress(
+                        t!(
+                            "Downloading %{pack} · %{done}/%{total}",
+                            pack = pack.title,
+                            done = done,
+                            total = total
+                        )
+                        .into_owned(),
+                    ));
                 };
                 progress(0);
                 let provider = pack.reference.provider;
@@ -389,8 +403,10 @@ impl Services {
                                     anyhow::anyhow!("Wayland session unavailable; restart Picora")
                                 })?
                                 .clone()
-                                .context("Enable Wayland keyboard access in Settings")?;
-                            anyhow::ensure!(ticket.valid(), "Paste cancelled");
+                                .with_context(|| {
+                                    t!("Enable Wayland keyboard access in Settings").into_owned()
+                                })?;
+                            anyhow::ensure!(ticket.valid(), "{}", t!("Paste cancelled"));
                             return w.paste(ticket).await;
                         }
                     }
@@ -443,7 +459,11 @@ impl Services {
             let check = verify(repo.clone()).await.map_err(|e| format!("{e:#}"));
             if preserve_previous && let Err(error) = &check {
                 anyhow::bail!(
-                    "Reconnect could not be verified. Your previous session was kept. {error}"
+                    "{}",
+                    t!(
+                        "Reconnect could not be verified. Your previous session was kept. %{error}",
+                        error = error
+                    )
                 );
             }
             // A first sign-in remains usable in memory if saving fails.
@@ -453,9 +473,13 @@ impl Services {
                 repo.clone();
             let persisted = persist(cookies).await;
             let saved = persisted.is_ok();
-            let storage_error = persisted
-                .err()
-                .map(|e| format!("Could not save the session: {e:#}"));
+            let storage_error = persisted.err().map(|e| {
+                t!(
+                    "Could not save the session: %{error}",
+                    error = format!("{e:#}")
+                )
+                .into_owned()
+            });
             *self.account_status()? = account::AccountStatus {
                 has_session: true,
                 saved,
@@ -464,7 +488,7 @@ impl Services {
             };
             self.bus.ctx.request_repaint();
             self.account_status()?.finish_check(check);
-            Ok(self.account_status()?.label().to_owned())
+            Ok(self.account_status()?.label().into_owned())
         }
         .await;
         if let Err(e) = &result
@@ -485,7 +509,7 @@ impl Services {
                     .map_err(|e| format!("{e:#}"));
                 let mut status = s.account_status()?;
                 status.finish_check(check);
-                Ok(status.label().to_owned())
+                Ok(status.label().into_owned())
             }
             .await;
             s.bus.send(Event::Login(result));
@@ -504,9 +528,13 @@ impl Services {
         *status = account::AccountStatus::default();
         if let Err(e) = &result {
             status.saved = true;
-            status.check = account::CheckState::Failed(format!(
-                "Disconnected locally, but the saved session could not be removed: {e:#}. Try Sign out again."
-            ));
+            status.check = account::CheckState::Failed(
+                t!(
+                    "Disconnected locally, but the saved session could not be removed: %{error}. Try Sign out again.",
+                    error = format!("{e:#}")
+                )
+                .into_owned(),
+            );
         }
         result
     }

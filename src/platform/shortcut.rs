@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use global_hotkey::{GlobalHotKeyManager, hotkey::HotKey};
+use rust_i18n::t;
 use std::str::FromStr;
 pub struct Shortcut {
     manager: GlobalHotKeyManager,
@@ -9,11 +10,12 @@ impl Shortcut {
     /// # Errors
     /// Rejects invalid key combinations and reports platform initialization or hotkey registration failures.
     pub fn new(text: &str) -> Result<Self> {
-        let key = HotKey::from_str(text).context("Use a shortcut such as Ctrl+Shift+Space")?;
+        let key = HotKey::from_str(text)
+            .with_context(|| t!("Use a shortcut such as Ctrl+Shift+Space").into_owned())?;
         let manager = GlobalHotKeyManager::new()?;
-        manager
-            .register(key)
-            .context("Shortcut unavailable; choose a different combination")?;
+        manager.register(key).with_context(|| {
+            t!("Shortcut unavailable; choose a different combination").into_owned()
+        })?;
         Ok(Self { manager, key })
     }
     /// # Errors
@@ -25,7 +27,7 @@ impl Shortcut {
         }
         self.manager
             .register(key)
-            .context("Shortcut is already in use")?;
+            .with_context(|| t!("Shortcut is already in use").into_owned())?;
         self.manager.unregister(self.key)?;
         self.key = key;
         Ok(())

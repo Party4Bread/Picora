@@ -1,8 +1,11 @@
 //! Sessions use an inherited pipe and OS-protected storage, never plaintext files.
 use anyhow::{Context, Result, ensure};
+use rust_i18n::t;
 use std::io::{Read, Write};
 const SERVICE: &str = "app.picora.desktop";
 const ACCOUNT: &str = "arca-session";
+/// Carries the interface language to the sign-in helper process.
+const LOCALE_VAR: &str = "PICORA_LOCALE";
 #[cfg(target_os = "windows")]
 mod windows;
 /// # Errors
@@ -82,6 +85,8 @@ pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
+        // The helper is a separate process; give its window the app's language.
+        .env(LOCALE_VAR, &*rust_i18n::locale())
         .kill_on_drop(true)
         .spawn()?;
     let mut stdin = child.stdin.take().context("Login pipe unavailable")?;
@@ -89,21 +94,25 @@ pub async fn login(cookies: Vec<String>) -> Result<Vec<String>> {
     drop(stdin);
     let result = tokio::time::timeout(std::time::Duration::from_mins(15), child.wait_with_output())
         .await
-        .context("Login timed out")??;
+        .with_context(|| t!("Login timed out").into_owned())??;
     ensure!(
         result.status.success(),
-        "arca.live sign-in window exited unexpectedly ({}). Its diagnostic output is available in Picora’s process log.",
-        result.status
+        "{}",
+        t!(
+            "arca.live sign-in window exited unexpectedly (%{status}). Its diagnostic output is available in Picora’s process log.",
+            status = result.status
+        )
     );
     ensure!(
         result.stdout.len() < 1024 * 1024,
         "Session response too large"
     );
-    let cookies: Vec<String> =
-        serde_json::from_slice(&result.stdout).context("Login window returned no session")?;
+    let cookies: Vec<String> = serde_json::from_slice(&result.stdout)
+        .with_context(|| t!("Login window returned no session").into_owned())?;
     ensure!(
         !cookies.is_empty(),
-        "No session cookies received. Finish signing in before closing the login window."
+        "{}",
+        t!("No session cookies received. Finish signing in before closing the login window.")
     );
     Ok(cookies)
 }
@@ -121,9 +130,14 @@ pub fn helper() -> Result<()> {
         .take(1024 * 1024)
         .read_to_string(&mut input)?;
     let cookies: Vec<String> = serde_json::from_str(&input)?;
+    if let Ok(locale) = std::env::var(LOCALE_VAR)
+        && matches!(locale.as_str(), "en" | "ko")
+    {
+        rust_i18n::set_locale(&locale);
+    }
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
-        .with_title("Picora · Sign in to arca.live, then close this window")
+        .with_title(t!("Picora · Sign in to arca.live, then close this window"))
         .with_inner_size(tao::dpi::LogicalSize::new(900., 720.))
         .build(&event_loop)?;
     let builder = WebViewBuilder::new()

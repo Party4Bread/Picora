@@ -1,0 +1,111 @@
+_version: 2
+# Messages from services, repositories, sign-in and updates that appear in the
+# interface. Keys are the English text; keep the double-quoted one-line layout.
+"Use a shortcut such as Ctrl+Shift+Space":
+  ko: "Ctrl+Shift+Space와 같은 단축키를 사용하세요"
+"Shortcut unavailable; choose a different combination":
+  ko: "이 단축키를 사용할 수 없습니다. 다른 조합을 선택하세요"
+"Shortcut is already in use":
+  ko: "이미 사용 중인 단축키입니다"
+"Allow Picora in macOS Accessibility settings to paste automatically. The sticker is copied; you can switch back and press Cmd+V.":
+  ko: "자동으로 붙여넣으려면 macOS 손쉬운 사용 설정에서 Picora를 허용하세요. 스티커는 복사되었으므로 원래 앱으로 돌아가 Cmd+V를 누르면 됩니다."
+"Access denied. Sign in or reconnect your account; the repository may also be blocking this connection.":
+  ko: "접근이 거부되었습니다. 로그인하거나 계정을 다시 연결하세요. 저장소가 이 연결을 차단하고 있을 수도 있습니다."
+"Repository rate limit reached. Wait before retrying.":
+  ko: "저장소 요청 한도에 도달했습니다. 잠시 후 다시 시도하세요."
+"Unexpected repository response: %{status}":
+  ko: "저장소에서 예상하지 못한 응답을 받았습니다: %{status}"
+"Download exceeds 25 MiB":
+  ko: "다운로드 크기가 25MiB를 초과합니다"
+"arca.live session expired or requires website verification. Reconnect in Accounts.":
+  ko: "arca.live 세션이 만료되었거나 웹사이트 인증이 필요합니다. 계정에서 다시 연결하세요."
+"arca.live catalog could not be read. Sign in, or check whether the website format changed.":
+  ko: "arca.live 목록을 읽을 수 없습니다. 로그인하거나 웹사이트 형식이 바뀌었는지 확인하세요."
+"arca.live did not return a sticker pack. Open its source page and reconnect in Accounts if needed.":
+  ko: "arca.live에서 스티커 팩을 받지 못했습니다. 원본 페이지를 열어 보고, 필요하면 계정에서 다시 연결하세요."
+"arca.live pack content missing; the website format may have changed":
+  ko: "arca.live 팩 내용이 없습니다. 웹사이트 형식이 바뀌었을 수 있습니다"
+"arca.live pack has no readable sticker images. Sign in or check the website format.":
+  ko: "arca.live 팩에서 읽을 수 있는 스티커 이미지가 없습니다. 로그인하거나 웹사이트 형식을 확인하세요."
+"DCInside catalog format changed: missing title":
+  ko: "DCInside 목록 형식이 바뀌었습니다: 제목이 없습니다"
+"DCInside catalog format changed or access was blocked":
+  ko: "DCInside 목록 형식이 바뀌었거나 접근이 차단되었습니다"
+"DCInside pack response changed or the pack is unavailable":
+  ko: "DCInside 팩 응답 형식이 바뀌었거나 팩을 사용할 수 없습니다"
+"This pack has no available stickers":
+  ko: "이 팩에는 사용할 수 있는 스티커가 없습니다"
+"GIPHY returned an unreadable response":
+  ko: "GIPHY에서 읽을 수 없는 응답을 받았습니다"
+"Add your GIPHY API key in Accounts first":
+  ko: "먼저 계정에서 GIPHY API 키를 추가하세요"
+"GIPHY rejected the API key. Check your key and its access in the GIPHY developer dashboard.":
+  ko: "GIPHY가 API 키를 거부했습니다. GIPHY 개발자 대시보드에서 키와 접근 권한을 확인하세요."
+"GIPHY's request limit was reached. Wait before trying again or check your API plan.":
+  ko: "GIPHY 요청 한도에 도달했습니다. 잠시 후 다시 시도하거나 API 요금제를 확인하세요."
+"GIPHY request failed (%{status})":
+  ko: "GIPHY 요청에 실패했습니다 (%{status})"
+"GIPHY response is too large":
+  ko: "GIPHY 응답이 너무 큽니다"
+"Invalid pack URL":
+  ko: "잘못된 팩 URL입니다"
+"Use an HTTPS pack URL without credentials or a port":
+  ko: "인증 정보나 포트가 없는 HTTPS 팩 URL을 사용하세요"
+"Use a DCInside or arca.live sticker pack URL":
+  ko: "DCInside 또는 arca.live 스티커 팩 URL을 사용하세요"
+"The URL must identify one sticker pack":
+  ko: "URL은 스티커 팩 하나를 가리켜야 합니다"
+"Could not load the saved session: %{error}":
+  ko: "저장된 세션을 불러올 수 없습니다: %{error}"
+"Your key is available until Picora quits, but could not be saved":
+  ko: "키는 Picora를 종료할 때까지 사용할 수 있지만 저장하지 못했습니다"
+"GIPHY key saved in OS-protected storage":
+  ko: "GIPHY 키를 운영체제 보안 저장소에 저장했습니다"
+"GIPHY key removed":
+  ko: "GIPHY 키를 삭제했습니다"
+"Downloading %{pack} · %{done}/%{total}":
+  ko: "%{pack} 다운로드 중 · %{done}/%{total}"
+"Enable Wayland keyboard access in Settings":
+  ko: "설정에서 Wayland 키보드 접근을 허용하세요"
+"Paste cancelled":
+  ko: "붙여넣기를 취소했습니다"
+"Reconnect could not be verified. Your previous session was kept. %{error}":
+  ko: "다시 연결한 세션을 확인할 수 없습니다. 이전 세션을 유지했습니다. %{error}"
+"Could not save the session: %{error}":
+  ko: "세션을 저장할 수 없습니다: %{error}"
+"Disconnected locally, but the saved session could not be removed: %{error}. Try Sign out again.":
+  ko: "이 기기에서는 연결을 해제했지만 저장된 세션을 삭제하지 못했습니다: %{error}. 다시 로그아웃해 보세요."
+"Checking connection…":
+  ko: "연결 확인 중…"
+"Connection needs attention":
+  ko: "연결 확인이 필요합니다"
+"Not connected":
+  ko: "연결되지 않음"
+"Connected":
+  ko: "연결됨"
+"Connected · this session only":
+  ko: "연결됨 · 이번 실행에서만"
+"Session saved · not checked":
+  ko: "세션 저장됨 · 확인 안 됨"
+"Session received · not checked":
+  ko: "세션 받음 · 확인 안 됨"
+"Login timed out":
+  ko: "로그인 시간이 초과되었습니다"
+"arca.live sign-in window exited unexpectedly (%{status}). Its diagnostic output is available in Picora’s process log.":
+  ko: "arca.live 로그인 창이 예기치 않게 종료되었습니다 (%{status}). 진단 출력은 Picora 프로세스 로그에서 확인할 수 있습니다."
+"Login window returned no session":
+  ko: "로그인 창에서 세션을 받지 못했습니다"
+"No session cookies received. Finish signing in before closing the login window.":
+  ko: "세션 쿠키를 받지 못했습니다. 로그인을 마친 뒤 로그인 창을 닫으세요."
+"Picora · Sign in to arca.live, then close this window":
+  ko: "Picora · arca.live에 로그인한 뒤 이 창을 닫으세요"
+"No update build for this platform":
+  ko: "이 플랫폼용 업데이트 빌드가 없습니다"
+"This release has no build for your platform":
+  ko: "이 릴리스에는 사용 중인 플랫폼용 빌드가 없습니다"
+"Cannot check GitHub Releases; retry later if offline or rate limited":
+  ko: "GitHub Releases를 확인할 수 없습니다. 오프라인이거나 요청 한도에 도달했다면 잠시 후 다시 시도하세요"
+"Cannot check development builds; retry later if offline or rate limited":
+  ko: "개발 빌드를 확인할 수 없습니다. 오프라인이거나 요청 한도에 도달했다면 잠시 후 다시 시도하세요"
+"Update checksum or size mismatch":
+  ko: "업데이트 체크섬 또는 크기가 일치하지 않습니다"

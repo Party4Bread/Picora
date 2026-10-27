@@ -7,6 +7,7 @@ use reqwest::{
     Client, StatusCode,
     cookie::{CookieStore, Jar},
 };
+use rust_i18n::t;
 use std::{sync::Arc, time::Duration};
 use url::Url;
 
@@ -89,29 +90,40 @@ pub fn allowed_url(url: &Url) -> bool {
 pub(crate) async fn read_response(mut response: reqwest::Response) -> Result<Vec<u8>> {
     match response.status() {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => bail!(
-            "Access denied. Sign in or reconnect your account; the repository may also be blocking this connection."
+            "{}",
+            t!(
+                "Access denied. Sign in or reconnect your account; the repository may also be blocking this connection."
+            )
         ),
         StatusCode::TOO_MANY_REQUESTS => {
-            bail!("Repository rate limit reached. Wait before retrying.")
+            bail!(
+                "{}",
+                t!("Repository rate limit reached. Wait before retrying.")
+            )
         }
         _ => {
             response.error_for_status_ref()?;
             ensure!(
                 response.status().is_success(),
-                "Unexpected repository response: {}",
-                response.status()
+                "{}",
+                t!(
+                    "Unexpected repository response: %{status}",
+                    status = response.status()
+                )
             );
         }
     }
     ensure!(
         response.content_length().unwrap_or(0) <= MAX_ASSET_BYTES as u64,
-        "Download exceeds 25 MiB"
+        "{}",
+        t!("Download exceeds 25 MiB")
     );
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await? {
         ensure!(
             bytes.len() + chunk.len() <= MAX_ASSET_BYTES,
-            "Download exceeds 25 MiB"
+            "{}",
+            t!("Download exceeds 25 MiB")
         );
         bytes.extend_from_slice(&chunk);
     }

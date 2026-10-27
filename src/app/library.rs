@@ -497,7 +497,7 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.strong("arca.live");
             let label = if self.login_busy && !account.checking() {
-                "Waiting for sign-in…"
+                "Waiting for sign-in…".into()
             } else {
                 account.label()
             };

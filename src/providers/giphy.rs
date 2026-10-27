@@ -3,6 +3,7 @@
 use crate::model::{Pack, PackRef, Provider, Sticker};
 use anyhow::{Context, Result, bail, ensure};
 use reqwest::{Client, StatusCode};
+use rust_i18n::t;
 use serde::Deserialize;
 use std::{collections::HashMap, time::Duration};
 use url::Url;
@@ -131,8 +132,8 @@ impl Giphy {
             .await
             .map_err(reqwest::Error::without_url)?;
         let bytes = response_bytes(response, 2 * 1024 * 1024).await?;
-        let page: Page =
-            serde_json::from_slice(&bytes).context("GIPHY returned an unreadable response")?;
+        let page: Page = serde_json::from_slice(&bytes)
+            .with_context(|| t!("GIPHY returned an unreadable response").into_owned())?;
         ensure!(
             page.data.len() <= PAGE_SIZE as usize,
             "GIPHY returned too many results"
@@ -153,7 +154,8 @@ impl Giphy {
 fn search_url(key: &str, kind: Kind, query: &str, offset: u32) -> Result<Url> {
     ensure!(
         !key.trim().is_empty(),
-        "Add your GIPHY API key in Accounts first"
+        "{}",
+        t!("Add your GIPHY API key in Accounts first")
     );
     let endpoint = if query.trim().is_empty() {
         "trending"
@@ -191,16 +193,27 @@ pub fn validate_url(raw: &str) -> Result<Url> {
 async fn response_bytes(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>> {
     match response.status() {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => bail!(
-            "GIPHY rejected the API key. Check your key and its access in the GIPHY developer dashboard."
+            "{}",
+            t!(
+                "GIPHY rejected the API key. Check your key and its access in the GIPHY developer dashboard."
+            )
         ),
         StatusCode::TOO_MANY_REQUESTS => bail!(
-            "GIPHY's request limit was reached. Wait before trying again or check your API plan."
+            "{}",
+            t!(
+                "GIPHY's request limit was reached. Wait before trying again or check your API plan."
+            )
         ),
-        status => ensure!(status.is_success(), "GIPHY request failed ({status})"),
+        status => ensure!(
+            status.is_success(),
+            "{}",
+            t!("GIPHY request failed (%{status})", status = status)
+        ),
     }
     ensure!(
         response.content_length().is_none_or(|n| n <= limit as u64),
-        "GIPHY response is too large"
+        "{}",
+        t!("GIPHY response is too large")
     );
     let mut bytes = Vec::new();
     while let Some(chunk) = response
@@ -210,7 +223,8 @@ async fn response_bytes(mut response: reqwest::Response, limit: usize) -> Result
     {
         ensure!(
             bytes.len().saturating_add(chunk.len()) <= limit,
-            "GIPHY response is too large"
+            "{}",
+            t!("GIPHY response is too large")
         );
         bytes.extend_from_slice(&chunk);
     }

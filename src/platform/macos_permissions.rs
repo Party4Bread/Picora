@@ -16,7 +16,7 @@ pub struct AccessibilityRequired;
 
 impl std::fmt::Display for AccessibilityRequired {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Allow Picora in macOS Accessibility settings to paste automatically. The sticker is copied; you can switch back and press Cmd+V.")
+        f.write_str(&rust_i18n::t!("Allow Picora in macOS Accessibility settings to paste automatically. The sticker is copied; you can switch back and press Cmd+V."))
     }
 }
 impl std::error::Error for AccessibilityRequired {}
