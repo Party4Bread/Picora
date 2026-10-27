@@ -56,3 +56,8 @@ jobs:
           python3 scripts/update_manifest.py --tag "$RELEASE_TAG"
           gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes dist/*
           gh release edit "$RELEASE_TAG" --draft=false --latest
+      - name: Remove development builds of older versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/prune_dev_releases.py --tag "$RELEASE_TAG"
