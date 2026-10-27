@@ -15,6 +15,7 @@ Like the Windows emoji panel, Picora opens with a shortcut: **Ctrl+Shift+Space**
 - **Find recent stickers:** recently used stickers appear first, followed by newly added ones.
 - **Use animated reactions:** hover to preview; copy a still image or paste an animated file. Downloaded stickers remain available offline.
 - **Work from the keyboard:** configurable global shortcut and arrow-key navigation, with light and dark themes.
+- **English and Korean:** the interface follows your system language; change it in **Settings → Language**.
 - **Update in the app:** install GitHub releases from **Settings → Updates** while preserving your library.
 
 ## Supported sticker repositories

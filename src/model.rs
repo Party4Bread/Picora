@@ -1,4 +1,5 @@
 use anyhow::{Result, bail, ensure};
+use rust_i18n::t;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use url::Url;
@@ -60,7 +61,8 @@ impl PackRef {
     pub fn parse(input: &str) -> Result<Self> {
         ensure!(
             !input.contains("..") && !input.to_lowercase().contains("%2e"),
-            "Invalid pack URL"
+            "{}",
+            t!("Invalid pack URL")
         );
         let url = Url::parse(input.trim())?;
         ensure!(
@@ -68,7 +70,8 @@ impl PackRef {
                 && url.username().is_empty()
                 && url.password().is_none()
                 && url.port().is_none(),
-            "Use an HTTPS pack URL without credentials or a port"
+            "{}",
+            t!("Use an HTTPS pack URL without credentials or a port")
         );
         let (provider, id) = match url.host_str() {
             Some("dccon.dcinside.com") => (Provider::Dcinside, url.fragment().unwrap_or_default()),
@@ -79,11 +82,12 @@ impl PackRef {
                     .unwrap_or_default()
                     .trim_end_matches('/'),
             ),
-            _ => bail!("Use a DCInside or arca.live sticker pack URL"),
+            _ => bail!("{}", t!("Use a DCInside or arca.live sticker pack URL")),
         };
         ensure!(
             !id.is_empty() && id.len() <= 20 && id.bytes().all(|b| b.is_ascii_digit()),
-            "The URL must identify one sticker pack"
+            "{}",
+            t!("The URL must identify one sticker pack")
         );
         Ok(Self {
             provider,
@@ -136,6 +140,7 @@ pub struct Settings {
     pub simultaneous_downloads: usize,
     #[serde(with = "theme_setting")]
     pub theme: eframe::egui::ThemePreference,
+    pub language: crate::i18n::Language,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -147,6 +152,7 @@ impl Default for Settings {
             launch_at_login: false,
             simultaneous_downloads: 4,
             theme: eframe::egui::ThemePreference::System,
+            language: crate::i18n::Language::System,
         }
     }
 }

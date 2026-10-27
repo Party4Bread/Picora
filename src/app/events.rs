@@ -1,13 +1,17 @@
 use super::{App, Duration, Event, Instant, LibrarySticker, Result, Shortcut, Visual, egui};
 #[cfg(target_os = "macos")]
 use super::{Tab, focus, platform};
+use rust_i18n::t;
 impl App {
     fn copy_completed(&mut self, ctx: &egui::Context, result: Result<LibrarySticker>) {
         let item = match result {
             Ok(item) => item,
             Err(error) => {
                 self.pending = None;
-                self.message(format!("Could not copy: {error:#}"), true);
+                self.message(
+                    t!("Could not copy: %{error}", error = format!("{error:#}")),
+                    true,
+                );
                 return;
             }
         };
@@ -38,12 +42,15 @@ impl App {
                 ));
                 ctx.request_repaint_after(Duration::from_millis(180));
             } else {
-                self.message("Copied — paste with Ctrl+V / Cmd+V", false);
+                self.message(t!("Copied — paste with Ctrl+V / Cmd+V"), false);
             }
         }
         if let Err(error) = recent {
             self.message(
-                format!("Copied, but could not update Recent: {error:#}"),
+                t!(
+                    "Copied, but could not update Recent: %{error}",
+                    error = format!("{error:#}")
+                ),
                 true,
             );
         }
@@ -94,7 +101,7 @@ impl App {
                         match result {
                             Ok(p) => {
                                 self.catalog = p;
-                                self.message(if self.catalog.is_empty() { "No packs found" } else { "Select a pack to preview" }, false);
+                                self.message(if self.catalog.is_empty() { t!("No packs found") } else { t!("Select a pack to preview") }, false);
                             }
                             Err(e) => self.message(format!("{e:#}"), true),
                         }
@@ -122,8 +129,8 @@ impl App {
                     match result {
                         // The favorite was committed before downloading. Do not
                         // overwrite an unfavorite/removal made during the download.
-                        Ok(p) => { self.message(format!("Downloaded {} · available offline", p.title), false); self.refresh(); }
-                        Err(e) => self.message(format!("Download incomplete: {e:#}. Open the pack and retry; cached images are reused."), true),
+                        Ok(p) => { self.message(t!("Downloaded %{title} · available offline", title = p.title), false); self.refresh(); }
+                        Err(e) => self.message(t!("Download incomplete: %{error}. Open the pack and retry; cached images are reused.", error = format!("{e:#}")), true),
                     }
                 }
                 Event::Media(url, result, animate, _permit) => {
@@ -150,7 +157,7 @@ impl App {
                     self.services.bus.send(Event::Pasted(focus::send_paste(target, ticket)));
                 },
                 Event::Pasted(result) => match result {
-                    Ok(()) => self.message("Copied and paste shortcut sent", false),
+                    Ok(()) => self.message(t!("Copied and paste shortcut sent"), false),
                     Err(e) => {
                         #[cfg(target_os = "macos")]
                         if e.downcast_ref::<platform::macos_permissions::AccessibilityRequired>().is_some() {
@@ -159,7 +166,7 @@ impl App {
                             self.open_library();
                             self.tab = Tab::Settings;
                         }
-                        self.message(format!("Copied — paste manually. {e:#}"), true);
+                        self.message(t!("Copied — paste manually. %{error}", error = format!("{e:#}")), true);
                     },
                 },
                 Event::Login(result) => {
@@ -169,9 +176,9 @@ impl App {
                 #[cfg(target_os = "linux")]
                 Event::Wayland(result) => match result {
                     Ok(warning) => {
-                        self.message(warning.unwrap_or_else(|| "Wayland keyboard access enabled".into()), false);
+                        self.message(warning.unwrap_or_else(|| t!("Wayland keyboard access enabled").into()), false);
                     }
-                    Err(e) => self.message(format!("Wayland input unavailable: {e:#}. Stickers can still be copied when a clipboard backend is available."), true),
+                    Err(e) => self.message(t!("Wayland input unavailable: %{error}. Stickers can still be copied when a clipboard backend is available.", error = format!("{e:#}")), true),
                 },
             }
         }

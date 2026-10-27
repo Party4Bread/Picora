@@ -1,0 +1,7 @@
+_version: 2
+# Keys are the English interface text. Keep every key and value double-quoted
+# and translations on one `  ko: "..."` line; src/i18n.rs checks this layout.
+"System language":
+  ko: "시스템 언어"
+"Language":
+  ko: "언어"

@@ -14,21 +14,22 @@ pub enum CheckState {
     Failed(String),
 }
 impl AccountStatus {
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> std::borrow::Cow<'static, str> {
+        use rust_i18n::t;
         if matches!(self.check, CheckState::Checking) {
-            "Checking connection…"
+            t!("Checking connection…")
         } else if self.error().is_some() {
-            "Connection needs attention"
+            t!("Connection needs attention")
         } else if !self.has_session {
-            "Not connected"
+            t!("Not connected")
         } else if self.verified() && self.saved {
-            "Connected"
+            t!("Connected")
         } else if self.verified() {
-            "Connected · this session only"
+            t!("Connected · this session only")
         } else if self.saved {
-            "Session saved · not checked"
+            t!("Session saved · not checked")
         } else {
-            "Session received · not checked"
+            t!("Session received · not checked")
         }
     }
     pub fn verified(&self) -> bool {

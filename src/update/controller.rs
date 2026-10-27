@@ -6,6 +6,7 @@ use super::{
 };
 use anyhow::{Context, Result};
 use eframe::egui;
+use rust_i18n::t;
 use std::{
     sync::mpsc,
     time::{Duration, Instant},
@@ -82,7 +83,9 @@ impl Controller {
                 ReleaseClient::new()?
                     .check(
                         BUILD_VERSION,
-                        Target::current().context("No update build for this platform")?,
+                        Target::current().with_context(|| {
+                            t!("No update build for this platform").into_owned()
+                        })?,
                         channel,
                     )
                     .await

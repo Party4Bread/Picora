@@ -1,0 +1,189 @@
+_version: 2
+# Library window: sidebar, Discover, Accounts and Settings.
+# Keep every key and value double-quoted; src/i18n.rs checks this layout.
+"Saved packs":
+  ko: "저장한 팩"
+"No packs yet":
+  ko: "아직 팩이 없습니다"
+"Custom groups":
+  ko: "사용자 그룹"
+"No groups yet":
+  ko: "아직 그룹이 없습니다"
+"New group":
+  ko: "새 그룹"
+"Rename":
+  ko: "이름 바꾸기"
+"Delete group":
+  ko: "그룹 삭제"
+"Group deleted. Its stickers stay in your library.":
+  ko: "그룹을 삭제했습니다. 그룹의 스티커는 라이브러리에 남아 있습니다."
+"Group name":
+  ko: "그룹 이름"
+"Group renamed":
+  ko: "그룹 이름을 바꿨습니다"
+"Group created. Right-click stickers to add them.":
+  ko: "그룹을 만들었습니다. 스티커를 우클릭해 그룹에 추가하세요."
+"My library":
+  ko: "내 라이브러리"
+"Discover":
+  ko: "둘러보기"
+"Settings":
+  ko: "설정"
+"Accounts":
+  ko: "계정"
+"%{provider} · %{count} stickers · %{author}":
+  ko: "%{provider} · 스티커 %{count}개 · %{author}"
+"View on source website":
+  ko: "원본 사이트에서 보기"
+"Right-click a sticker to favorite it or add it to a group without adding the whole pack.":
+  ko: "스티커를 우클릭하면 팩 전체를 추가하지 않고 해당 스티커만 즐겨찾기에 추가하거나 그룹에 넣을 수 있습니다."
+"Download pack":
+  ko: "팩 다운로드"
+"Adds every sticker to your library for offline use":
+  ko: "모든 스티커를 라이브러리에 추가해 오프라인에서도 사용할 수 있게 합니다"
+"Cannot save pack: %{error}":
+  ko: "팩을 저장할 수 없습니다: %{error}"
+"Favorite pack":
+  ko: "팩 즐겨찾기"
+"Pack added to favorites":
+  ko: "팩을 즐겨찾기에 추가했습니다"
+"Pack removed from favorites":
+  ko: "팩을 즐겨찾기에서 제거했습니다"
+"Pack options":
+  ko: "팩 옵션"
+"Favorite updated":
+  ko: "즐겨찾기를 변경했습니다"
+"Download for offline use":
+  ko: "오프라인용으로 다운로드"
+"Source":
+  ko: "원본"
+"Remove from library":
+  ko: "라이브러리에서 제거"
+"Pack removed; cached files retained for clipboard safety":
+  ko: "팩을 제거했습니다. 클립보드에서 계속 쓸 수 있도록 캐시 파일은 남겨 둡니다"
+"Recently used first, then newly added stickers.":
+  ko: "최근 사용한 스티커를 먼저, 그다음 새로 추가한 스티커를 표시합니다."
+"Click to copy · Right-click for actions":
+  ko: "클릭하여 복사 · 우클릭하여 더 보기"
+"Discover stickers":
+  ko: "스티커 둘러보기"
+"Find GIFs and stickers, then keep the ones you like.":
+  ko: "GIF와 스티커를 찾아 마음에 드는 것을 보관하세요."
+"Find a pack, preview it, and make it yours.":
+  ko: "팩을 찾아 미리 보고 내 라이브러리에 추가하세요."
+"Search GIPHY, or leave empty for trending":
+  ko: "GIPHY 검색 (비워 두면 인기 항목 표시)"
+"Search packs or paste a pack URL":
+  ko: "팩을 검색하거나 팩 URL을 붙여넣으세요"
+"Search":
+  ko: "검색"
+"Previous":
+  ko: "이전"
+"Page %{page}":
+  ko: "%{page}페이지"
+"Next":
+  ko: "다음"
+"Refresh / retry":
+  ko: "새로 고침 / 다시 시도"
+"Public packs can be browsed without signing in.":
+  ko: "공개 팩은 로그인하지 않아도 둘러볼 수 있습니다."
+"Waiting for sign-in…":
+  ko: "로그인을 기다리는 중…"
+"Catalog access verified.":
+  ko: "목록 접근이 확인되었습니다."
+"Check your connection, or sign in again to complete website verification.":
+  ko: "연결을 확인하거나, 다시 로그인해 웹사이트 인증을 완료하세요."
+"You can use this session until Picora quits.":
+  ko: "Picora를 종료할 때까지 이 세션을 사용할 수 있습니다."
+"Sign in on arca.live’s own website. When you are done, close the login window to connect the session.":
+  ko: "arca.live 웹사이트에서 직접 로그인하세요. 로그인을 마치면 로그인 창을 닫아 세션을 연결합니다."
+"Picora saves session cookies using OS-protected storage (Windows account encryption on Windows). Your password stays on the website.":
+  ko: "Picora는 세션 쿠키를 운영체제의 보안 저장소에 보관합니다(Windows에서는 Windows 계정 암호화 사용). 비밀번호는 웹사이트에만 남습니다."
+"Sign in / reconnect":
+  ko: "로그인 / 다시 연결"
+"Complete sign-in in the arca.live window, then close it":
+  ko: "arca.live 창에서 로그인을 마친 뒤 창을 닫으세요"
+"Check connection":
+  ko: "연결 확인"
+"Sign out":
+  ko: "로그아웃"
+"arca.live session removed":
+  ko: "arca.live 세션을 삭제했습니다"
+"Trouble signing in?":
+  ko: "로그인에 문제가 있나요?"
+"If the website reports a CSRF error or keeps returning to sign-in, try a fresh sign-in window. Your saved session stays in place until a new sign-in finishes.":
+  ko: "웹사이트에서 CSRF 오류가 나거나 계속 로그인 화면으로 돌아가면 새 로그인 창을 열어 보세요. 새 로그인을 마칠 때까지 저장된 세션은 그대로 유지됩니다."
+"Open fresh sign-in window":
+  ko: "새 로그인 창 열기"
+"Sign in again in the new window, then close it to reconnect.":
+  ko: "새 창에서 다시 로그인한 뒤 창을 닫으면 다시 연결됩니다."
+"Global shortcut":
+  ko: "전역 단축키"
+"Apply shortcut":
+  ko: "단축키 적용"
+"Use a shortcut such as Ctrl+Shift+Space":
+  ko: "Ctrl+Shift+Space와 같은 형식의 단축키를 입력하세요"
+"Paste automatically after choosing a sticker":
+  ko: "스티커를 고르면 자동으로 붙여넣기"
+"Picora never sends Enter. If input permission or focus restoration fails, paste manually.":
+  ko: "Picora는 Enter 키를 보내지 않습니다. 입력 권한이나 포커스 복원에 실패하면 직접 붙여넣으세요."
+"Wayland requires your desktop’s permission to send the paste shortcut.":
+  ko: "Wayland에서는 붙여넣기 단축키를 보내려면 데스크톱의 권한이 필요합니다."
+"Higher values load packs and previews faster. Lower it if a sticker site starts rejecting requests.":
+  ko: "값이 클수록 팩과 미리보기를 빠르게 불러옵니다. 스티커 사이트가 요청을 거부하기 시작하면 값을 낮추세요."
+"Original files are retained so clipboard attachments remain available.":
+  ko: "클립보드 첨부를 계속 사용할 수 있도록 원본 파일을 보관합니다."
+"Enable / reconnect Wayland keyboard access":
+  ko: "Wayland 키보드 접근 허용 / 다시 연결"
+"Approve keyboard access in the desktop dialog":
+  ko: "데스크톱 대화 상자에서 키보드 접근을 허용하세요"
+"Simultaneous downloads":
+  ko: "동시 다운로드 수"
+"Launch at login":
+  ko: "로그인 시 실행"
+"Appearance":
+  ko: "화면 모드"
+"System":
+  ko: "시스템"
+"Light":
+  ko: "라이트"
+"Dark":
+  ko: "다크"
+"Settings saved":
+  ko: "설정을 저장했습니다"
+"Open data folder":
+  ko: "데이터 폴더 열기"
+"Opened data folder":
+  ko: "데이터 폴더를 열었습니다"
+"Automatic paste is ready":
+  ko: "자동 붙여넣기 준비 완료"
+"Enable automatic paste":
+  ko: "자동 붙여넣기 사용"
+"Permission is enabled. Switch to your chat, open Picora, and choose the sticker again.":
+  ko: "권한이 허용되었습니다. 채팅으로 돌아가 Picora를 열고 스티커를 다시 선택하세요."
+"The previous sticker will not be pasted automatically.":
+  ko: "이전에 고른 스티커는 자동으로 붙여넣지 않습니다."
+"Your sticker is copied. You can paste it now with Cmd+V, or finish setup below.":
+  ko: "스티커가 복사되었습니다. 지금 Cmd+V로 붙여넣거나, 아래에서 설정을 마치세요."
+"1. Open Accessibility settings using the button below.":
+  ko: "1. 아래 버튼으로 손쉬운 사용 설정을 엽니다."
+"2. Turn on Picora in the app list. If it is missing, click + and select Picora.app in Applications.":
+  ko: "2. 앱 목록에서 Picora를 켭니다. 목록에 없으면 +를 클릭하고 응용 프로그램 폴더의 Picora.app을 선택합니다."
+"3. Return to Picora. This panel checks permission automatically.":
+  ko: "3. Picora로 돌아옵니다. 이 화면에서 권한을 자동으로 확인합니다."
+"macOS may still be allowing an older Picora build. This can happen once after updating from an older version. Remove Picora from the Accessibility list with −, add the current Picora.app with +, and turn it on. Then quit and reopen Picora.":
+  ko: "macOS가 이전 Picora 빌드에 권한을 주고 있을 수 있습니다. 이전 버전에서 업데이트한 뒤 한 번 발생할 수 있습니다. 손쉬운 사용 목록에서 −로 Picora를 제거하고, +로 현재 Picora.app을 추가한 뒤 켜세요. 그런 다음 Picora를 종료했다가 다시 여세요."
+"Keep Picora in Applications. If you run it from source, macOS may list your terminal or launcher instead.":
+  ko: "Picora는 응용 프로그램 폴더에 두세요. 소스에서 실행하면 macOS가 Picora 대신 터미널이나 실행기를 목록에 표시할 수 있습니다."
+"Back to my library":
+  ko: "내 라이브러리로 돌아가기"
+"Open Accessibility settings":
+  ko: "손쉬운 사용 설정 열기"
+"Could not open System Settings: %{error}. Open Privacy & Security → Accessibility manually.":
+  ko: "시스템 설정을 열 수 없습니다: %{error}. 개인정보 보호 및 보안 → 손쉬운 사용을 직접 여세요."
+"Picora is already enabled, but it still does not work":
+  ko: "Picora를 이미 켰는데도 동작하지 않나요?"
+"Use manual paste instead":
+  ko: "직접 붙여넣기 사용"
+"Automatic paste is off. Copy a sticker, then press Cmd+V in your chat.":
+  ko: "자동 붙여넣기를 껐습니다. 스티커를 복사한 뒤 채팅에서 Cmd+V를 누르세요."

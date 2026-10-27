@@ -1,6 +1,7 @@
 use super::selector;
 use super::{Context, Pack, PackRef, Repository, Result, Url, ensure, read_response};
 use crate::model::Sticker;
+use rust_i18n::t;
 use scraper::Html;
 use serde_json::Value;
 
@@ -46,7 +47,8 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
             .unwrap_or_default();
         ensure!(
             !name.trim().is_empty(),
-            "DCInside catalog format changed: missing title"
+            "{}",
+            t!("DCInside catalog format changed: missing title")
         );
         result.push(Pack {
             url: reference.url(),
@@ -68,7 +70,8 @@ pub fn parse_catalog(html: &str) -> Result<Vec<Pack>> {
     }
     ensure!(
         !result.is_empty() || doc.select(&selector(".dccon_shop_list")?).next().is_some(),
-        "DCInside catalog format changed or access was blocked"
+        "{}",
+        t!("DCInside catalog format changed or access was blocked")
     );
     Ok(result)
 }
@@ -105,8 +108,9 @@ fn required<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
 /// # Errors
 /// Rejects invalid JSON, missing pack metadata, or a pack with no readable stickers.
 pub fn parse_detail(body: &str) -> Result<Pack> {
-    let v: Value = serde_json::from_str(body)
-        .context("DCInside pack response changed or the pack is unavailable")?;
+    let v: Value = serde_json::from_str(body).with_context(|| {
+        t!("DCInside pack response changed or the pack is unavailable").into_owned()
+    })?;
     let info = &v["info"];
     let reference = PackRef::parse(&format!(
         "https://dccon.dcinside.com/#{}",
@@ -126,7 +130,11 @@ pub fn parse_detail(body: &str) -> Result<Pack> {
             url: url.into(),
         });
     }
-    ensure!(!stickers.is_empty(), "This pack has no available stickers");
+    ensure!(
+        !stickers.is_empty(),
+        "{}",
+        t!("This pack has no available stickers")
+    );
     Ok(Pack {
         url: reference.url(),
         reference,
