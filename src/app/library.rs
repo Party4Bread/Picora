@@ -13,14 +13,17 @@ impl App {
         };
         let mut imported = 0;
         for path in files {
-            let Ok(reference) = PackRef::local(&path) else {
-                continue;
-            };
             let title = path
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("Local sticker")
                 .to_owned();
+            let Ok(owned_path) = self.services.cache.import_local(&path) else {
+                continue;
+            };
+            let Ok(reference) = PackRef::local(&owned_path) else {
+                continue;
+            };
             let sticker = crate::model::Sticker {
                 id: reference.id.clone(),
                 label: title.clone(),

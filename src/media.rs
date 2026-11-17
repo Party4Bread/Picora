@@ -180,6 +180,42 @@ impl MediaCache {
             disk: std::sync::Arc::default(),
         })
     }
+    /// Copies a local media file into Picora-owned storage.
+    ///
+    /// # Errors
+    /// Returns an error if the source is missing, too large, or cannot be copied.
+    pub fn import_local(&self, source: &std::path::Path) -> Result<PathBuf> {
+        let source = source.canonicalize()?;
+        let metadata = std::fs::metadata(&source)?;
+        ensure!(metadata.is_file(), "Local sticker is not a file");
+        ensure!(
+            metadata.len() <= MAX_ASSET_BYTES as u64,
+            "Local sticker is too large"
+        );
+        let local = self.root.join("local");
+        std::fs::create_dir_all(&local)?;
+        let extension = source
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_else(|| "media".into());
+        let destination = local.join(format!(
+            "{}.{extension}",
+            hex::encode(Sha256::digest(
+                source.as_os_str().to_string_lossy().as_bytes()
+            ))
+        ));
+        let bytes = std::fs::read(source)?;
+        let mut temporary = tempfile::NamedTempFile::new_in(&local)?;
+        std::io::Write::write_all(&mut temporary, &bytes)?;
+        match std::fs::remove_file(&destination) {
+            Ok(()) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
+        temporary.persist(&destination)?;
+        Ok(destination)
+    }
     fn dir(&self, url: &str) -> PathBuf {
         self.root.join(hex::encode(Sha256::digest(url.as_bytes())))
     }
