@@ -253,6 +253,11 @@ impl Services {
                     .context("Invalid local sticker URL")?
                     .to_file_path()
                     .map_err(|()| anyhow::anyhow!("Invalid local sticker path"))?;
+                let size = tokio::fs::metadata(&path).await?.len();
+                anyhow::ensure!(
+                    size <= crate::media::MAX_ASSET_BYTES as u64,
+                    "Local sticker is too large"
+                );
                 tokio::fs::read(path).await?
             }
         };
