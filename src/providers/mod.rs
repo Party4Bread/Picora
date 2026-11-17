@@ -137,6 +137,7 @@ impl Repository {
             Provider::Dcinside => dcinside::browse(self, query, page).await,
             Provider::Arca => arca::browse(self, query, page).await,
             Provider::Giphy => bail!("GIPHY items are searched individually, not as packs"),
+            Provider::Local => bail!("Local files cannot be browsed"),
         }
     }
     /// # Errors
@@ -147,6 +148,7 @@ impl Repository {
             Provider::Dcinside => dcinside::detail(self, r).await,
             Provider::Arca => arca::detail(self, r).await,
             Provider::Giphy => bail!("GIPHY items are searched individually, not as packs"),
+            Provider::Local => bail!("Local files cannot be opened as packs"),
         }
     }
 }

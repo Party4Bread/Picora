@@ -15,6 +15,22 @@ fn rejects_corrupt_images_and_preserves_transparency() {
     let asset = cache.save("static", bytes.get_ref()).unwrap();
     assert!(!cache.prepare_copy(asset, CopyMode::Auto).unwrap().1);
 }
+
+#[test]
+fn local_import_copies_media_into_owned_storage() {
+    let source_dir = tempfile::tempdir().unwrap();
+    let cache_dir = tempfile::tempdir().unwrap();
+    let source = source_dir.path().join("sticker.png");
+    std::fs::write(&source, b"local media").unwrap();
+    let cache = MediaCache::new(cache_dir.path().to_owned()).unwrap();
+
+    let owned = cache.import_local(&source).unwrap();
+    assert!(owned.starts_with(cache_dir.path().join("local")));
+    assert_eq!(std::fs::read(&owned).unwrap(), b"local media");
+
+    std::fs::remove_file(source).unwrap();
+    assert_eq!(std::fs::read(owned).unwrap(), b"local media");
+}
 #[test]
 fn gif_frames_and_cache_original_extension_are_preserved() {
     let mut bytes = Vec::new();

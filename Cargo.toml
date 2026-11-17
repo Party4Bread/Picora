@@ -39,6 +39,7 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 interprocess = "2"
 fs2 = "0.4"
 open = "5"
+rfd = "0.18"
 tempfile = "3"
 mp4 = "0.14"
 openh264 = "0.9.8"

@@ -120,6 +120,23 @@ fn copy_prepares_selected_representation_and_always_completes() {
         assert_eq!(copied.pack_key, item.pack_key);
         assert_eq!(copied.sticker.id, item.sticker.id);
     }
+
+    #[test]
+    fn local_files_load_through_the_media_pipeline() {
+        let fixture = Fixture::new();
+        let path = fixture._dir.path().join("local.png");
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgba8(2, 2)
+            .write_to(&mut bytes, image::ImageFormat::Png)
+            .unwrap();
+        std::fs::write(&path, bytes.get_ref()).unwrap();
+        let url = url::Url::from_file_path(&path).unwrap().to_string();
+        let asset = fixture
+            .runtime
+            .block_on(fixture.services.load_asset(Provider::Local, &url))
+            .unwrap();
+        assert_eq!(std::fs::read(asset.original).unwrap(), bytes.get_ref());
+    }
     rt.block_on(s.copy_with(item.clone(), CopyMode::Still, |_, _| async {
         anyhow::bail!("clipboard denied")
     }));

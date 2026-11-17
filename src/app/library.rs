@@ -4,6 +4,46 @@ use super::{
 };
 use rust_i18n::t;
 impl App {
+    fn import_files(&mut self) {
+        let Some(files) = rfd::FileDialog::new()
+            .add_filter("Media", &["png", "jpg", "jpeg", "gif", "webp", "mp4"])
+            .pick_files()
+        else {
+            return;
+        };
+        let mut imported = 0;
+        for path in files {
+            let title = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Local sticker")
+                .to_owned();
+            let Ok(owned_path) = self.services.cache.import_local(&path) else {
+                continue;
+            };
+            let Ok(reference) = PackRef::local(&owned_path) else {
+                continue;
+            };
+            let sticker = crate::model::Sticker {
+                id: reference.id.clone(),
+                label: title.clone(),
+                url: reference.url(),
+            };
+            let pack = crate::model::Pack {
+                reference,
+                title,
+                author: t!("Local file").into(),
+                url: String::new(),
+                thumbnail: sticker.url.clone(),
+                stickers: vec![sticker],
+            };
+            if self.store.save_pack(&pack).is_ok() {
+                imported += 1;
+            }
+        }
+        self.refresh();
+        self.message(t!("Imported %{count} local files", count = imported), false);
+    }
     fn library_collections(&mut self, ui: &mut egui::Ui) {
         for (label, filter) in [
             (t!("Favorites"), Filter::Favorites),
@@ -167,6 +207,9 @@ impl App {
                 ui.label(RichText::new("Picora").size(23.).strong());
                 self.update_notice(ui);
                 ui.add_space(8.);
+                if ui.button(t!("Import local files")).clicked() {
+                    self.import_files();
+                }
                 for (label, tab) in [
                     (t!("My library"), Tab::Library),
                     (t!("Discover"), Tab::Browse),
