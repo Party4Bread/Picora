@@ -10,6 +10,7 @@ pub enum Provider {
     Dcinside,
     Arca,
     Giphy,
+    Local,
 }
 impl Provider {
     #[must_use]
@@ -18,6 +19,7 @@ impl Provider {
             Self::Dcinside => "dcinside",
             Self::Arca => "arca",
             Self::Giphy => "giphy",
+            Self::Local => "local",
         }
     }
     #[must_use]
@@ -26,6 +28,7 @@ impl Provider {
             Self::Dcinside => "https://dccon.dcinside.com/",
             Self::Arca => "https://arca.live/",
             Self::Giphy => "https://giphy.com/",
+            Self::Local => "file:///",
         }
     }
 }
@@ -35,6 +38,7 @@ impl fmt::Display for Provider {
             Self::Dcinside => "DCInside",
             Self::Arca => "arca.live",
             Self::Giphy => "GIPHY",
+            Self::Local => "Local files",
         })
     }
 }
@@ -44,6 +48,18 @@ pub struct PackRef {
     pub id: String,
 }
 impl PackRef {
+    /// Creates a reference for a user-selected local media file.
+    pub fn local(path: &std::path::Path) -> Result<Self> {
+        let path = path.canonicalize()?;
+        ensure!(path.is_file(), "Local sticker is not a file");
+        let id = Url::from_file_path(path)
+            .map_err(|()| anyhow::anyhow!("Invalid local sticker path"))?
+            .to_string();
+        Ok(Self {
+            provider: Provider::Local,
+            id,
+        })
+    }
     #[must_use]
     pub fn key(&self) -> String {
         format!("{}:{}", self.provider.id(), self.id)
@@ -54,6 +70,7 @@ impl PackRef {
             Provider::Dcinside => format!("https://dccon.dcinside.com/#{}", self.id),
             Provider::Arca => format!("https://arca.live/e/{}", self.id),
             Provider::Giphy => Provider::Giphy.origin().into(),
+            Provider::Local => self.id.clone(),
         }
     }
     /// # Errors

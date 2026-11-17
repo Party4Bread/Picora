@@ -164,6 +164,7 @@ impl Services {
             Provider::Dcinside => 0,
             Provider::Arca => 1,
             Provider::Giphy => anyhow::bail!("GIPHY has no pack repository"),
+            Provider::Local => anyhow::bail!("Local files have no repository"),
         };
         Ok(repos[index].clone())
     }
@@ -247,6 +248,13 @@ impl Services {
         let bytes = match p {
             Provider::Dcinside | Provider::Arca => self.repo(p)?.bytes(url).await?,
             Provider::Giphy => self.giphy.image(url).await?,
+            Provider::Local => {
+                let path = url::Url::parse(url)
+                    .context("Invalid local sticker URL")?
+                    .to_file_path()
+                    .map_err(|()| anyhow::anyhow!("Invalid local sticker path"))?;
+                tokio::fs::read(path).await?
+            }
         };
         let cache = self.cache.clone();
         let url = url.to_owned();

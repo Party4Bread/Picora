@@ -65,6 +65,22 @@ fn validates_pack_urls_and_namespaces_ids() {
     ] {
         assert!(PackRef::parse(url).is_err(), "accepted {url}");
     }
+
+    #[test]
+    fn local_pack_references_use_file_urls() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("한글 sticker.png");
+        std::fs::write(&path, b"image").unwrap();
+        let reference = PackRef::local(&path).unwrap();
+        assert_eq!(reference.provider, Provider::Local);
+        assert_eq!(
+            reference.url(),
+            url::Url::from_file_path(path.canonicalize().unwrap())
+                .unwrap()
+                .to_string()
+        );
+        assert!(reference.key().starts_with("local:file://"));
+    }
 }
 #[test]
 fn imports_are_idempotent_and_groups_survive_reopen() {

@@ -43,6 +43,12 @@ _version: 2
   ko: "Picora · 라이브러리"
 "Open picker":
   ko: "선택기 열기"
+"Import local files":
+  ko: "로컬 파일 가져오기"
+"Local file":
+  ko: "로컬 파일"
+"Imported %{count} local files":
+  ko: "로컬 파일 %{count}개를 가져왔습니다"
 "Open library":
   ko: "라이브러리 열기"
 "Hide to tray":
